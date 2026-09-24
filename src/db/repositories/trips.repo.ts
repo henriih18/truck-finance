@@ -1,6 +1,10 @@
-import type { SQLiteDatabase } from 'expo-sqlite';
-import { calculateTripFinancials, type Settings, type TripInput } from '../../finance/calculator';
-import { generateId } from '../../utils/id';
+import type { SQLiteDatabase } from "expo-sqlite";
+import {
+  calculateTripFinancials,
+  type Settings,
+  type TripInput,
+} from "../../finance/calculator";
+import { generateId } from "../../utils/id";
 
 export type NewTrip = {
   userId: string;
@@ -24,14 +28,21 @@ export type TripRow = NewTrip & {
   net_freight: number;
   advance: number;
   balance: number;
-  status: 'in_progress' | 'finished';
-  balance_status: 'pending' | 'paid';
+  status: "in_progress" | "finished";
+  balance_status: "pending" | "paid";
   balance_paid_at: string | null;
   balance_amount: number | null;
   balance_method: string | null;
   balance_notes: string | null;
   _created_at: string;
   _updated_at: string;
+  trip_number: string;
+  gross_freight: number;
+  moto_qty: number;
+  client: string;
+  origin: string;
+  destination: string;
+  date: string;
 };
 
 export class TripsRepository {
@@ -57,12 +68,35 @@ export class TripsRepository {
         initial_mileage, final_mileage
       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        localId, null, 'pending', 1, 0, now, now,
-        input.userId, input.truckId ?? null, input.tripNumber, input.date,
-        input.client, input.origin, input.destination, input.cargoType ?? null,
-        input.motoQty, f.grossFreight, f.netFreight, f.advance, f.balance,
-        'in_progress', 'pending',
-        null, null, null, null, input.notes ?? null, input.initialMileage ?? null, null,
+        localId,
+        null,
+        "pending",
+        1,
+        0,
+        now,
+        now,
+        input.userId,
+        input.truckId ?? null,
+        input.tripNumber,
+        input.date,
+        input.client,
+        input.origin,
+        input.destination,
+        input.cargoType ?? null,
+        input.motoQty,
+        f.grossFreight,
+        f.netFreight,
+        f.advance,
+        f.balance,
+        "in_progress",
+        "pending",
+        null,
+        null,
+        null,
+        null,
+        input.notes ?? null,
+        input.initialMileage ?? null,
+        null,
       ],
     );
 
@@ -73,7 +107,19 @@ export class TripsRepository {
           _local_id, _server_id, _sync_status, _dirty, _deleted, _created_at, _updated_at,
           trip_id, code, label, amount
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-        [dId, null, 'pending', 1, 0, now, now, localId, d.code, d.label, d.amount],
+        [
+          dId,
+          null,
+          "pending",
+          1,
+          0,
+          now,
+          now,
+          localId,
+          d.code,
+          d.label,
+          d.amount,
+        ],
       );
     }
 
@@ -101,7 +147,7 @@ export class TripsRepository {
     );
   }
 
-  async markBalancePaid(
+  /* async markBalancePaid(
     localId: string,
     amount: number,
     paidAt: string,
@@ -119,6 +165,28 @@ export class TripsRepository {
          _dirty = 1, _sync_status = 'pending', _updated_at = ?
        WHERE _local_id = ?`,
       [paidAt, amount, method ?? null, notes ?? null, now, localId],
+    );
+  } */
+
+  async markBalancePaid(
+    localId: string,
+    amount: number,
+    date: string,
+    method?: string,
+    notes?: string,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db.runAsync(
+      `UPDATE local_trips 
+       SET balance_status = 'paid', 
+           balance_paid_at = ?, 
+           balance_amount = ?, 
+           balance_method = ?, 
+           balance_notes = ?,
+           _updated_at = ?,
+           _dirty = 1
+       WHERE _local_id = ?`,
+      [date, amount, method ?? null, notes ?? null, now, localId],
     );
   }
 }

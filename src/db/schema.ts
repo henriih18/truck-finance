@@ -20,7 +20,7 @@ export const MIGRATIONS: string[] = [
      ten_pct_base TEXT NOT NULL DEFAULT 'net_freight',
      ten_pct_kind TEXT NOT NULL DEFAULT 'discount',
      ten_pct_affects TEXT NOT NULL DEFAULT 'freight',
-     ten_pct_value REAL NOT NULL DEFAULT 10
+     ten_pct_value REAL NOT NULL DEFAULT 10,
      currency TEXT DEFAULT 'COP'
   );`,
 

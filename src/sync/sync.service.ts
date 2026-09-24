@@ -31,6 +31,9 @@ const REMOTE_TABLES: Record<keyof TableMap, string> = {
   local_settings: 'settings',
 };
 
+// Tablas que tienen restricción UNIQUE en user_id (requieren UPSERT)
+const UPSERT_TABLES = new Set(['local_settings']);
+
 const ALLOWED_TABLES = new Set(TABLES);
 
 function validateTableName(name: string): keyof TableMap {
@@ -49,13 +52,11 @@ function localToRemoteRow(row: Record<string, any>) {
   return out;
 }
 
-// Helper para verificar si es un UUID válido
 const isUuid = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
 export class SyncService {
   constructor(
     private db: SQLiteDatabase,
-    
     private supa: SupabaseClient,
   ) {}
 
@@ -90,15 +91,15 @@ export class SyncService {
       for (const row of dirty) {
         const payload = localToRemoteRow(row);
         
-        // ✅ FIX 1: No agregar user_id a trip_discounts (no tiene esa columna)
+        // No agregar user_id a trip_discounts
         if (safeTable !== 'local_trip_discounts') {
           payload.user_id = useAuthStore.getState().user?.id;
         }
 
-        // ✅ FIX 3: Subida de fotos sin usar fetch('data:...') que falla en Android
+        // Subida de fotos
         if (safeTable === 'local_expenses' && row.receipt_local && !row.receipt_url) {
           try {
-            console.log('[SYNC] Subiendo foto de recibo...', row.receipt_local);
+            console.log('[SYNC] Subiendo foto...', row.receipt_local);
             const fileExt = row.receipt_local.split('.').pop() || 'jpg';
             const fileName = `${row._local_id}-${Date.now()}.${fileExt}`;
             const filePath = `${payload.user_id}/${fileName}`;
@@ -107,7 +108,6 @@ export class SyncService {
               encoding: LegacyFileSystem.EncodingType.Base64,
             });
             
-            // Conversión segura de Base64 a Blob en React Native
             const byteCharacters = atob(base64);
             const byteNumbers = new Array(byteCharacters.length);
             for (let i = 0; i < byteCharacters.length; i++) {
@@ -124,15 +124,15 @@ export class SyncService {
             
             const { data: urlData } = this.supa.storage.from('receipts').getPublicUrl(filePath);
             payload.receipt_url = urlData.publicUrl;
-            console.log('[SYNC] Foto subida exitosamente:', payload.receipt_url);
+            console.log('[SYNC] Foto subida:', payload.receipt_url);
             
           } catch (err: any) {
             console.error('[SYNC] Error subiendo foto:', err);
-            continue; // No marcamos como synced si falla la foto
+            continue;
           }
         }
 
-        // ✅ FIX 2: Resolver trip_id local a server_id antes de subir
+        // Resolver trip_id local a server_id
         if (safeTable === 'local_expenses' && row.trip_id && !isUuid(row.trip_id)) {
           const parentTrip = await this.db.getFirstAsync<{ _server_id: string | null }>(
             `SELECT _server_id FROM local_trips WHERE _local_id = ?`,
@@ -142,8 +142,8 @@ export class SyncService {
           if (parentTrip && parentTrip._server_id) {
             payload.trip_id = parentTrip._server_id;
           } else {
-            console.log('[SYNC] El viaje padre aún no se ha sincronizado. Omitiendo gasto por ahora.');
-            continue; // Se volverá a intentar en la próxima sync
+            console.log('[SYNC] Viaje padre no sincronizado aún. Omitiendo gasto.');
+            continue;
           }
         }
 
@@ -156,13 +156,28 @@ export class SyncService {
             await this.db.runAsync(`DELETE FROM ${safeTable} WHERE _local_id = ?`, [row._local_id]);
             ok = true;
           } else if (row._server_id) {
+            // UPDATE si ya tiene server_id
             const { error } = await this.supa.from(remoteTable).update(payload).eq('id', row._server_id);
             if (error) throw error;
             ok = true;
           } else {
-            const { data, error } = await this.supa.from(remoteTable).insert(payload).select('id').single();
-            if (error) throw error;
-            await this.db.runAsync(`UPDATE ${safeTable} SET _server_id = ? WHERE _local_id = ?`, [data.id, row._local_id]);
+            // INSERT nuevo
+            if (UPSERT_TABLES.has(safeTable)) {
+              // Para settings: usar upsert (INSERT ... ON CONFLICT DO UPDATE)
+              const { data, error } = await this.supa
+                .from(remoteTable)
+                .upsert(payload, { onConflict: 'user_id' })
+                .select('id')
+                .single();
+              if (error) throw error;
+              if (data?.id) {
+                await this.db.runAsync(`UPDATE ${safeTable} SET _server_id = ? WHERE _local_id = ?`, [data.id, row._local_id]);
+              }
+            } else {
+              const { data, error } = await this.supa.from(remoteTable).insert(payload).select('id').single();
+              if (error) throw error;
+              await this.db.runAsync(`UPDATE ${safeTable} SET _server_id = ? WHERE _local_id = ?`, [data.id, row._local_id]);
+            }
             ok = true;
           }
           
@@ -229,22 +244,29 @@ export class SyncService {
     );
   }
 
-  private async insertLocal(table: string, remote: any) {
-    const cols = Object.keys(remote).filter(c => c !== 'id' && c !== 'user_id' && c !== 'trip_id' && c !== 'truck_id');
-    const locals = cols.map((c) => c.replace(/([A-Z])/g, '_$1').toLowerCase());
+    private async insertLocal(table: string, remote: any) {
+    // Filtrar columnas que no existen en local o que necesitan mapeo especial
+    const skipCols = new Set(['id', 'user_id', 'trip_id', 'truck_id', 'deleted_at']);
+    const cols = Object.keys(remote).filter(c => !skipCols.has(c));
+    
+    // Mapear columnas de Supabase a columnas locales
+    const locals = cols.map((c) => {
+      if (c === 'created_at') return '_created_at';
+      if (c === 'updated_at') return '_updated_at';
+      return c.replace(/([A-Z])/g, '_$1').toLowerCase();
+    });
+    
     const values = cols.map((c) => remote[c]);
     const placeholders = cols.map(() => '?').join(',');
 
-    const extraCols = ['_local_id', '_server_id', '_sync_status', '_dirty', '_deleted', '_created_at', '_updated_at'];
+    const extraCols = ['_local_id', '_server_id', '_sync_status', '_dirty', '_deleted'];
     const localId = `local-${remote.id || Math.random().toString(36).substring(2, 15)}`;
     const extraVals = [
       localId, 
       remote.id, 
       'synced', 
       0, 
-      0, 
-      remote.created_at ?? new Date().toISOString(), 
-      remote.updated_at ?? new Date().toISOString()
+      0
     ];
 
     const allCols = [...extraCols, ...locals];
@@ -257,13 +279,22 @@ export class SyncService {
   }
 
   private async updateLocal(table: string, localId: string, remote: any) {
-    const cols = Object.keys(remote).filter(c => c !== 'id' && c !== 'user_id' && c !== 'trip_id' && c !== 'truck_id');
-    const sets = cols.map((c) => `${c.replace(/([A-Z])/g, '_$1').toLowerCase()} = ?`).join(',');
+    const skipCols = new Set(['id', 'user_id', 'trip_id', 'truck_id', 'deleted_at']);
+    const cols = Object.keys(remote).filter(c => !skipCols.has(c));
+    
+    // Mapear columnas de Supabase a columnas locales
+    const sets = cols.map((c) => {
+      const localCol = c === 'created_at' ? '_created_at' 
+                     : c === 'updated_at' ? '_updated_at'
+                     : c.replace(/([A-Z])/g, '_$1').toLowerCase();
+      return `${localCol} = ?`;
+    }).join(',');
+    
     const values = cols.map((c) => remote[c]);
     
     await this.db.runAsync(
-      `UPDATE ${table} SET ${sets}, _server_id = ?, _dirty = 0, _sync_status = 'synced', _updated_at = ? WHERE _local_id = ?`,
-      [...values, remote.id, remote.updated_at, localId]
+      `UPDATE ${table} SET ${sets}, _server_id = ?, _dirty = 0, _sync_status = 'synced' WHERE _local_id = ?`,
+      [...values, remote.id, localId]
     );
   }
 
