@@ -25,7 +25,7 @@ export default function TripsList() {
           <Link href={`/trips/${item._local_id}`} asChild>
             <Pressable style={s.card}>
               <View style={s.rowBetween}>
-                <Text style={s.tripTitle}>Viaje #{item.tripNumber}</Text>
+                <Text style={s.tripTitle}>Viaje #{item.trip_number}</Text>
                 <Text
                   style={
                     item.balance_status === 'paid' ? s.statusPaid : s.statusPending
@@ -37,9 +37,9 @@ export default function TripsList() {
               <Text style={s.route}>
                 {item.origin} → {item.destination}
               </Text>
-              <Text style={s.route}>{item.motoQty} motos · {item.date}</Text>
+              <Text style={s.route}>{item.moto_qty} motos · {item.date}</Text>
               <View style={[s.rowBetween, { marginTop: 12 }]}>
-                <Info label="Flete" value={`$${item.grossFreight.toLocaleString('es-CO')}`} />
+                <Info label="Flete" value={`$${item.gross_freight.toLocaleString('es-CO')}`} />
                 <Info label="Neto" value={`$${item.net_freight.toLocaleString('es-CO')}`} />
                 <Info label="Cumplido" value={`$${item.balance.toLocaleString('es-CO')}`} />
               </View>

@@ -13,11 +13,24 @@ export type NewExpense = {
   notes?: string;
 };
 
-export type ExpenseRow = NewExpense & {
+export type ExpenseRow = {
   _local_id: string;
   _server_id: string | null;
+  _sync_status: string;
+  _dirty: number;
+  _deleted: number;
   _created_at: string;
   _updated_at: string;
+  user_id: string;
+  trip_id: string | null;
+  category_code: string;
+  description: string | null;
+  amount: number;
+  date: string;
+  mileage: number | null;
+  receipt_url: string | null;
+  receipt_local: string | null;
+  notes: string | null;
 };
 
 export class ExpensesRepository {

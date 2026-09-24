@@ -22,9 +22,24 @@ export type NewTrip = {
   initialMileage?: number;
 };
 
-export type TripRow = NewTrip & {
+export type TripRow = {
   _local_id: string;
   _server_id: string | null;
+  _sync_status: string;
+  _dirty: number;
+  _deleted: number;
+  _created_at: string;
+  _updated_at: string;
+  user_id: string;
+  truck_id: string | null;
+  trip_number: string;
+  date: string;
+  client: string;
+  origin: string;
+  destination: string;
+  cargo_type: string | null;
+  moto_qty: number;
+  gross_freight: number;
   net_freight: number;
   advance: number;
   balance: number;
@@ -34,15 +49,9 @@ export type TripRow = NewTrip & {
   balance_amount: number | null;
   balance_method: string | null;
   balance_notes: string | null;
-  _created_at: string;
-  _updated_at: string;
-  trip_number: string;
-  gross_freight: number;
-  moto_qty: number;
-  client: string;
-  origin: string;
-  destination: string;
-  date: string;
+  notes: string | null;
+  initial_mileage: number | null;
+  final_mileage: number | null;
 };
 
 export class TripsRepository {

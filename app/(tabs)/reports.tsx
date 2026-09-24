@@ -39,7 +39,7 @@ export default function Reports() {
 
   // Calcular totales
   const totals = useMemo(() => {
-    const totalGross = filteredData.filteredTrips.reduce((sum, t) => sum + t.grossFreight, 0);
+    const totalGross = filteredData.filteredTrips.reduce((sum, t) => sum + t.gross_freight, 0);
     const totalNet = filteredData.filteredTrips.reduce((sum, t) => sum + t.net_freight, 0);
     const totalAdvance = filteredData.filteredTrips.reduce((sum, t) => sum + t.advance, 0);
     const totalBalancePending = filteredData.filteredTrips
@@ -78,7 +78,7 @@ export default function Reports() {
         t.client,
         t.origin,
         t.destination,
-        t.grossFreight,
+        t.gross_freight,
         t.net_freight,
         t.advance,
         t.balance,

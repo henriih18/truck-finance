@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
 import { Stack, useSegments, useRouter } from "expo-router";
-import { View, Text, ActivityIndicator, StatusBar } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { initializeDatabase } from "../src/db/init";
 import { useAuthStore } from "../src/stores/auth.store";
 import { initializeSync } from "../src/sync/init";
+import {
+  View,
+  Text,
+  ActivityIndicator,
+  StatusBar,
+  Pressable,
+} from "react-native";
 
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
@@ -13,22 +19,32 @@ export default function RootLayout() {
   const segments = useSegments();
   const router = useRouter();
 
+  const [initError, setInitError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+
   // 1. Inicializar BD y Sync una sola vez
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
-        console.log("[APP] Inicializando base de datos...");
         await initializeDatabase();
-        console.log("[APP] BD lista, inicializando sync...");
         await initializeSync();
-        console.log("[APP] Todo listo");
-        setReady(true);
+        if (!cancelled) setReady(true);
       } catch (e: any) {
-        console.error("[APP] Error:", e);
-        setReady(true); // Para no bloquear la app
+        console.error("[APP] Error de inicialización:", e);
+        if (!cancelled) setInitError(e?.message ?? String(e));
       }
     })();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [retryCount]);
+
+  const retry = () => {
+    setInitError(null);
+    setReady(false);
+    setRetryCount((c) => c + 1);
+  };
 
   // 2. Manejar redirecciones de autenticación
   useEffect(() => {
@@ -42,6 +58,65 @@ export default function RootLayout() {
       router.replace("/");
     }
   }, [session, authLoading, ready, segments, router]);
+
+  if (initError) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "white",
+          padding: 24,
+        }}
+      >
+        <Text style={{ fontSize: 40, marginBottom: 16 }}>⚠️</Text>
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: "bold",
+            color: "#dc2626",
+            marginBottom: 12,
+            textAlign: "center",
+          }}
+        >
+          No se pudo inicializar la app
+        </Text>
+        <Text
+          style={{
+            color: "#6b7280",
+            textAlign: "center",
+            marginBottom: 8,
+            lineHeight: 20,
+          }}
+        >
+          Error al crear la base de datos local:
+        </Text>
+        <Text
+          style={{
+            color: "#111827",
+            fontFamily: "monospace",
+            textAlign: "center",
+            marginBottom: 24,
+            fontSize: 12,
+          }}
+        >
+          {initError}
+        </Text>
+        <Pressable
+          onPress={retry}
+          style={{
+            backgroundColor: "#2563eb",
+            paddingHorizontal: 24,
+            paddingVertical: 12,
+            borderRadius: 8,
+          }}
+        >
+          <Text style={{ color: "white", fontWeight: "bold" }}>Reintentar</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   // 3. Pantalla de carga
   if (!ready || authLoading) {
