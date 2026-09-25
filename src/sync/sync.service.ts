@@ -378,24 +378,37 @@ export class SyncService {
     ]);
     const cols = Object.keys(remote).filter((c) => !skipCols.has(c));
 
-    // Mapear columnas de Supabase a columnas locales
-    const sets = cols
-      .map((c) => {
-        const localCol =
-          c === "created_at"
-            ? "_created_at"
-            : c === "updated_at"
-              ? "_updated_at"
-              : c.replace(/([A-Z])/g, "_$1").toLowerCase();
-        return `${localCol} = ?`;
-      })
-      .join(",");
+        // Mapear columnas de Supabase a columnas locales
+    const setsArr = cols.map((c) => {
+      const localCol =
+        c === "created_at"
+          ? "_created_at"
+          : c === "updated_at"
+            ? "_updated_at"
+            : c.replace(/([A-Z])/g, "_$1").toLowerCase();
+      return `${localCol} = ?`;
+    });                                                  // ← ARRAY (sin .join)
 
     const values = cols.map((c) => remote[c]);
 
+    // FIX: build dinámico del SET — nunca produce coma inicial
+    // (si cols=[], solo se actualizan las columnas internas)
+    const internalSets = [
+      ...setsArr,
+      "_server_id = ?",
+      "_dirty = 0",
+      "_sync_status = 'synced'",
+      "_updated_at = ?",
+    ].join(", ");
+
     await this.db.runAsync(
-      `UPDATE ${table} SET ${sets}, _server_id = ?, _dirty = 0, _sync_status = 'synced' WHERE _local_id = ?`,
-      [...values, remote.id, localId],
+      `UPDATE ${table} SET ${internalSets} WHERE _local_id = ?`,
+      [
+        ...values,
+        remote.id,
+        remote.updated_at ?? new Date().toISOString(),
+        localId,
+      ],
     );
   }
 
