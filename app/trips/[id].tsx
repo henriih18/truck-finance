@@ -3,6 +3,11 @@ import { useLocalSearchParams, useRouter, Link } from "expo-router";
 import { useTripsRepo } from "../../src/hooks/useTripsRepo";
 import type { TripRow } from "../../src/db/repositories/trips.repo";
 import { ExpensesRepository } from "../../src/db/repositories/expenses.repo";
+import {
+  DiscountsRepository,
+  type DiscountRow,
+} from "../../src/db/repositories/discounts.repo";
+import { calculateMileageMetrics } from "../../src/finance/metrics";
 import { getDatabase } from "../../src/db/connection";
 import {
   View,
@@ -12,23 +17,41 @@ import {
   Alert,
   StyleSheet,
   ActivityIndicator,
-  FlatList,
   Modal,
   TextInput,
 } from "react-native";
+
+type ExpenseRow = {
+  _local_id: string;
+  category_code: string;
+  description: string | null;
+  amount: number;
+  date: string;
+  mileage: number | null;
+};
+
+const CATEGORIES: Record<string, { label: string; icon: string }> = {
+  COMBUSTIBLE: { label: "Combustible", icon: "⛽" },
+  PEAJE: { label: "Peajes", icon: "🛣️" },
+  DESCARGUE: { label: "Descargue", icon: "📦" },
+  OTROS: { label: "Otros", icon: "🔧" },
+};
 
 export default function TripDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const repo = useTripsRepo();
   const [trip, setTrip] = useState<TripRow | null>(null);
-  const [expenses, setExpenses] = useState<any[]>([]);
-  const [expensesTotal, setExpensesTotal] = useState(0);
+  const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
+  const [discounts, setDiscounts] = useState<DiscountRow[]>([]);
   const [showPayModal, setShowPayModal] = useState(false);
   const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("Efectivo");
   const [payNotes, setPayNotes] = useState("");
+  // Modal de finalización (pide kilometraje final)
+  const [showFinishModal, setShowFinishModal] = useState(false);
+  const [finalMileage, setFinalMileage] = useState("");
 
   useEffect(() => {
     if (!id || !repo) return;
@@ -40,19 +63,20 @@ export default function TripDetail() {
 
         const db = await getDatabase();
         const expRepo = new ExpensesRepository(db);
-        const expList = await expRepo.listByTrip(id);
-        setExpenses(expList);
+        const discRepo = new DiscountsRepository(db);
 
-        const total = await expRepo.getTotalByTrip(id);
-        setExpensesTotal(total);
+        const [expList, discList] = await Promise.all([
+          expRepo.listByTrip(id),
+          discRepo.listByTrip(id),
+        ]);
+        setExpenses(expList as ExpenseRow[]);
+        setDiscounts(discList);
       } catch (e) {
         console.error("Error cargando viaje:", e);
       }
     };
 
     loadData();
-
-    // Recargar cada 2 segundos por si se agregó un gasto desde otra pantalla
     const interval = setInterval(loadData, 2000);
     return () => clearInterval(interval);
   }, [id, repo]);
@@ -60,7 +84,7 @@ export default function TripDetail() {
   if (!repo || !trip) {
     return (
       <View style={s.center}>
-        <ActivityIndicator size="large" color="#2563eb" />
+        <ActivityIndicator size="large" color="#059669" />
         <Text style={{ marginTop: 10, color: "#6b7280" }}>
           Cargando datos del viaje...
         </Text>
@@ -68,20 +92,70 @@ export default function TripDetail() {
     );
   }
 
+  // Cálculos financieros
+  const totalDiscounts = discounts
+    .filter((d) => d.amount > 0)
+    .reduce((a, d) => a + d.amount, 0);
+  const totalCharges = discounts
+    .filter((d) => d.amount < 0)
+    .reduce((a, d) => a + Math.abs(d.amount), 0);
+  const expensesTotal = expenses.reduce((a, e) => a + e.amount, 0);
   const available = trip.advance - expensesTotal;
+
+  // Desglose de gastos por categoría
+  const expensesByCategory = Object.keys(CATEGORIES)
+    .map((code) => {
+      const total = expenses
+        .filter((e) => e.category_code === code)
+        .reduce((a, e) => a + e.amount, 0);
+      return { code, ...CATEGORIES[code], total };
+    })
+    .filter((c) => c.total > 0);
+
+  // Gasto solo de combustible (para KPIs de kilometraje)
+  const fuelExpenseTotal = expenses
+    .filter((e) => e.category_code === "COMBUSTIBLE")
+    .reduce((a, e) => a + e.amount, 0);
+
+  // Métricas de kilometraje
+  const mileageMetrics = calculateMileageMetrics({
+    initialMileage: trip.initial_mileage,
+    finalMileage: trip.final_mileage,
+    fuelExpense: fuelExpenseTotal,
+    totalExpenses: expensesTotal,
+  });
 
   const onFinish = async () => {
     Alert.alert("Finalizar viaje", "¿Confirmas que el viaje ha terminado?", [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Finalizar",
-        onPress: async () => {
-          await repo.finish(trip._local_id);
-          const t = await repo.getById(trip._local_id);
-          setTrip(t);
+        onPress: () => {
+          // Pre-llenar kilometraje final sugerido (si hay inicial, sumar estimación)
+          setFinalMileage(
+            trip.initial_mileage != null ? String(trip.initial_mileage) : "",
+          );
+          setShowFinishModal(true);
         },
       },
     ]);
+  };
+
+  const handleConfirmFinish = async () => {
+    if (!repo || !trip) return;
+    const km = finalMileage ? Number(finalMileage) : undefined;
+    try {
+      await repo.finish(trip._local_id, km);
+      const t = await repo.getById(trip._local_id);
+      setTrip(t);
+      setShowFinishModal(false);
+      Alert.alert(
+        "✅ Viaje finalizado",
+        km ? `Kilometraje final: ${km.toLocaleString("es-CO")} km` : undefined,
+      );
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "No se pudo finalizar el viaje");
+    }
   };
 
   const onMarkPaid = () => {
@@ -114,19 +188,6 @@ export default function TripDetail() {
     }
   };
 
-  const getCategoryIcon = (code: string) => {
-    switch (code) {
-      case "COMBUSTIBLE":
-        return "⛽";
-      case "PEAJE":
-        return "🛣️";
-      case "DESCARGUE":
-        return "📦";
-      default:
-        return "🔧";
-    }
-  };
-
   return (
     <ScrollView style={s.container}>
       <View style={s.header}>
@@ -134,36 +195,105 @@ export default function TripDetail() {
         <Text style={s.subtitle}>
           {trip.origin} → {trip.destination} · {trip.date}
         </Text>
+        {trip.client ? (
+          <Text style={s.client}>Cliente: {trip.client}</Text>
+        ) : null}
+        {trip.moto_qty > 0 ? (
+          <Text style={s.motoQty}>🛵 {trip.moto_qty} motos</Text>
+        ) : null}
       </View>
 
-      <Section title="FLETE NETO">
+      {/* SECCIÓN FLETE */}
+      <Section title="FLETE">
         <Row
           label="Flete total"
           value={`$${trip.gross_freight.toLocaleString("es-CO")}`}
-        />
-        <Row
-          label="Valor neto"
-          value={`$${trip.net_freight.toLocaleString("es-CO")}`}
           bold
         />
       </Section>
 
-      <Section title="ANTICIPO (70%)">
+      {/* SECCIÓN DESCUENTOS */}
+      <Section title="DESCUENTOS">
+        {discounts.length === 0 ? (
+          <Text style={s.emptyText}>Sin descuentos aplicados.</Text>
+        ) : (
+          <>
+            {discounts.map((d) => {
+              const isDiscount = d.amount > 0;
+              return (
+                <Row
+                  key={d._local_id}
+                  label={d.label}
+                  value={`${isDiscount ? "-" : "+"}$${Math.abs(d.amount).toLocaleString("es-CO")}`}
+                  valueColor={isDiscount ? "#dc2626" : "#059669"}
+                />
+              );
+            })}
+            {totalCharges > 0 && (
+              <>
+                <Divider />
+                <Row
+                  label="Total descuentos"
+                  value={`-$${totalDiscounts.toLocaleString("es-CO")}`}
+                  valueColor="#dc2626"
+                />
+                <Row
+                  label="Total cargos extra"
+                  value={`+$${totalCharges.toLocaleString("es-CO")}`}
+                  valueColor="#059669"
+                />
+              </>
+            )}
+          </>
+        )}
+      </Section>
+
+      {/* SECCIÓN FLETE NETO */}
+      <Section title="FLETE NETO" highlight>
         <Row
-          label="Recibido"
-          value={`$${trip.advance.toLocaleString("es-CO")}`}
+          label="Flete neto"
+          value={`$${trip.net_freight.toLocaleString("es-CO")}`}
+          bold
+          big
         />
       </Section>
 
+      {/* SECCIÓN ANTICIPO */}
+      <Section title="ANTICIPO (70%)">
+        <Row
+          label="Anticipo recibido"
+          value={`$${trip.advance.toLocaleString("es-CO")}`}
+          bold
+        />
+      </Section>
+
+      {/* SECCIÓN GASTOS */}
       <Section title="GASTOS DEL VIAJE">
+        {expensesByCategory.length > 0 ? (
+          <>
+            {expensesByCategory.map((cat) => (
+              <Row
+                key={cat.code}
+                label={`${cat.icon} ${cat.label}`}
+                value={`$${cat.total.toLocaleString("es-CO")}`}
+              />
+            ))}
+            <Divider />
+          </>
+        ) : (
+          <Text style={s.emptyText}>Sin gastos registrados aún.</Text>
+        )}
+
         <Row
           label="Total gastos"
           value={`$${expensesTotal.toLocaleString("es-CO")}`}
+          valueColor="#dc2626"
         />
         <Row
-          label="Disponible"
+          label="Disponible del anticipo"
           value={`$${available.toLocaleString("es-CO")}`}
           bold
+          valueColor={available >= 0 ? "#059669" : "#dc2626"}
         />
 
         <Link href={`/trips/${id}/add-expense`} asChild>
@@ -172,48 +302,130 @@ export default function TripDetail() {
           </Pressable>
         </Link>
 
-        {expenses.length > 0 ? (
-          <View style={{ marginTop: 12 }}>
-            {expenses.map((exp) => (
-              <View key={exp._local_id} style={s.expenseItem}>
-                <View
-                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
-                >
-                  <Text style={{ fontSize: 18 }}>
-                    {getCategoryIcon(exp.category_code)}
-                  </Text>
-                  <View>
-                    <Text style={s.expenseDesc}>
-                      {exp.description || exp.category_code}
-                    </Text>
-                    <Text style={s.expenseDate}>
-                      {exp.date} {exp.mileage ? `· Km: ${exp.mileage}` : ""}
-                    </Text>
+        {expenses.length > 0 && (
+          <View style={s.expensesList}>
+            <Text style={s.expensesListTitle}>DETALLE</Text>
+            {expenses.map((exp) => {
+              const cat = CATEGORIES[exp.category_code] ?? {
+                label: exp.category_code,
+                icon: "🔧",
+              };
+              return (
+                <View key={exp._local_id} style={s.expenseItem}>
+                  <View style={s.expenseLeft}>
+                    <Text style={s.expenseIcon}>{cat.icon}</Text>
+                    <View>
+                      <Text style={s.expenseDesc}>
+                        {exp.description || cat.label}
+                      </Text>
+                      <Text style={s.expenseDate}>
+                        {exp.date}{" "}
+                        {exp.mileage
+                          ? `· Km: ${exp.mileage.toLocaleString("es-CO")}`
+                          : ""}
+                      </Text>
+                    </View>
                   </View>
+                  <Text style={s.expenseAmount}>
+                    -${Number(exp.amount).toLocaleString("es-CO")}
+                  </Text>
                 </View>
-                <Text style={s.expenseAmount}>
-                  -${Number(exp.amount).toLocaleString("es-CO")}
-                </Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
-        ) : (
-          <Text style={{ color: "#9ca3af", fontStyle: "italic", marginTop: 8 }}>
-            Sin gastos registrados aún.
-          </Text>
         )}
       </Section>
 
+      {/* SECCIÓN CUMPLIDO */}
       <Section title="CUMPLIDO (30%)">
-        <Row label="Valor" value={`$${trip.balance.toLocaleString("es-CO")}`} />
+        <Row
+          label="Valor"
+          value={`$${trip.balance.toLocaleString("es-CO")}`}
+          bold
+        />
         <Row
           label="Estado"
           value={
             trip.balance_status === "paid" ? "🟢 Paz y salvo" : "🔴 Pendiente"
           }
-          bold
         />
+        {trip.balance_status === "paid" && trip.balance_paid_at && (
+          <>
+            <Divider />
+            <Row label="Pagado el" value={trip.balance_paid_at.slice(0, 10)} />
+            {trip.balance_amount != null && (
+              <Row
+                label="Valor recibido"
+                value={`$${trip.balance_amount.toLocaleString("es-CO")}`}
+              />
+            )}
+            {trip.balance_method && (
+              <Row label="Método" value={trip.balance_method} />
+            )}
+            {trip.balance_notes && (
+              <Row label="Observaciones" value={trip.balance_notes} />
+            )}
+          </>
+        )}
       </Section>
+
+      {/* SECCIÓN KILOMETRAJE (solo si hay datos de kilometraje) */}
+      {(trip.initial_mileage != null || trip.final_mileage != null) && (
+        <Section title="KILOMETRAJE">
+          {trip.initial_mileage != null && (
+            <Row
+              label="Km inicial"
+              value={`${trip.initial_mileage.toLocaleString("es-CO")} km`}
+            />
+          )}
+          {trip.final_mileage != null && (
+            <Row
+              label="Km final"
+              value={`${trip.final_mileage.toLocaleString("es-CO")} km`}
+            />
+          )}
+          {mileageMetrics.distance != null && (
+            <>
+              <Divider />
+              <Row
+                label="Km recorridos"
+                value={`${mileageMetrics.distance.toLocaleString("es-CO")} km`}
+                bold
+              />
+            </>
+          )}
+          {mileageMetrics.distance != null && mileageMetrics.distance > 0 && (
+            <>
+              {mileageMetrics.fuelCostPerKm != null && (
+                <Row
+                  label="Combustible / km"
+                  value={`$${mileageMetrics.fuelCostPerKm.toLocaleString("es-CO")}`}
+                  valueColor="#dc2626"
+                />
+              )}
+              {mileageMetrics.costPerKm != null && (
+                <Row
+                  label="Costo total / km"
+                  value={`$${mileageMetrics.costPerKm.toLocaleString("es-CO")}`}
+                  valueColor="#dc2626"
+                />
+              )}
+              {fuelExpenseTotal > 0 && (
+                <Row
+                  label="Gasto en combustible"
+                  value={`$${fuelExpenseTotal.toLocaleString("es-CO")}`}
+                />
+              )}
+            </>
+          )}
+          {trip.status === "in_progress" && trip.initial_mileage == null && (
+            <Text style={s.emptyText}>
+              ℹ️ No se registró kilometraje inicial. Se podrá ingresar el final
+              al finalizar el viaje.
+            </Text>
+          )}
+        </Section>
+      )}
 
       {trip.status === "in_progress" && (
         <Pressable style={s.buttonOrange} onPress={onFinish}>
@@ -228,6 +440,7 @@ export default function TripDetail() {
       )}
 
       <View style={{ height: 40 }} />
+
       {/* MODAL DE PAGO */}
       <Modal visible={showPayModal} animationType="slide" transparent={true}>
         <View style={s.modalOverlay}>
@@ -288,6 +501,42 @@ export default function TripDetail() {
           </View>
         </View>
       </Modal>
+
+      {/* MODAL DE FINALIZACIÓN (pide kilometraje final) */}
+      <Modal visible={showFinishModal} animationType="slide" transparent={true}>
+        <View style={s.modalOverlay}>
+          <View style={s.modalContent}>
+            <Text style={s.modalTitle}>Finalizar viaje</Text>
+            <Text style={s.modalSub}>
+              Registra el kilometraje final del camión (opcional).
+              {trip.initial_mileage != null
+                ? `\nKm inicial: ${trip.initial_mileage.toLocaleString("es-CO")} km`
+                : ""}
+            </Text>
+
+            <Text style={s.label}>KILOMETRAJE FINAL</Text>
+            <TextInput
+              style={s.input}
+              value={finalMileage}
+              onChangeText={setFinalMileage}
+              keyboardType="numeric"
+              placeholder="Ej: 150000"
+            />
+
+            <View style={s.modalActions}>
+              <Pressable
+                style={s.cancelBtn}
+                onPress={() => setShowFinishModal(false)}
+              >
+                <Text style={s.cancelText}>Cancelar</Text>
+              </Pressable>
+              <Pressable style={s.confirmBtn} onPress={handleConfirmFinish}>
+                <Text style={s.confirmText}>Finalizar</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -295,13 +544,17 @@ export default function TripDetail() {
 function Section({
   title,
   children,
+  highlight,
 }: {
   title: string;
   children: React.ReactNode;
+  highlight?: boolean;
 }) {
   return (
-    <View style={s.section}>
-      <Text style={s.sectionTitle}>{title}</Text>
+    <View style={[s.section, highlight && s.sectionHighlight]}>
+      <Text style={[s.sectionTitle, highlight && s.sectionTitleHighlight]}>
+        {title}
+      </Text>
       <View style={{ marginTop: 8 }}>{children}</View>
     </View>
   );
@@ -311,17 +564,34 @@ function Row({
   label,
   value,
   bold,
+  big,
+  valueColor,
 }: {
   label: string;
   value: string;
   bold?: boolean;
+  big?: boolean;
+  valueColor?: string;
 }) {
   return (
     <View style={s.row}>
-      <Text style={s.rowLabel}>{label}</Text>
-      <Text style={[s.rowValue, bold && s.boldText]}>{value}</Text>
+      <Text style={[s.rowLabel, bold && s.boldText]}>{label}</Text>
+      <Text
+        style={[
+          s.rowValue,
+          bold && s.boldText,
+          big && s.bigText,
+          valueColor ? { color: valueColor } : null,
+        ]}
+      >
+        {value}
+      </Text>
     </View>
   );
+}
+
+function Divider() {
+  return <View style={s.divider} />;
 }
 
 const s = StyleSheet.create({
@@ -335,6 +605,8 @@ const s = StyleSheet.create({
   header: { padding: 16, borderBottomWidth: 1, borderBottomColor: "#e5e7eb" },
   title: { fontSize: 24, fontWeight: "bold", color: "#111827" },
   subtitle: { color: "#6b7280", marginTop: 4 },
+  client: { color: "#374151", marginTop: 4, fontSize: 13 },
+  motoQty: { color: "#059669", marginTop: 4, fontSize: 13, fontWeight: "600" },
   section: {
     backgroundColor: "#f9fafb",
     borderRadius: 12,
@@ -342,28 +614,52 @@ const s = StyleSheet.create({
     margin: 16,
     marginBottom: 0,
   },
+  sectionHighlight: {
+    backgroundColor: "#d1fae5",
+    borderWidth: 1,
+    borderColor: "#059669",
+  },
   sectionTitle: {
     fontSize: 12,
     fontWeight: "bold",
     color: "#6b7280",
     letterSpacing: 0.5,
   },
+  sectionTitleHighlight: {
+    color: "#065f46",
+  },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: 8,
+    alignItems: "center",
   },
-  rowLabel: { color: "#4b5563" },
-  rowValue: { color: "#111827", fontWeight: "500" },
-  boldText: { fontWeight: "bold", fontSize: 16 },
+  rowLabel: { color: "#4b5563", fontSize: 14 },
+  rowValue: { color: "#111827", fontWeight: "500", fontSize: 14 },
+  boldText: { fontWeight: "bold" },
+  bigText: { fontSize: 18 },
+  divider: { height: 1, backgroundColor: "#e5e7eb", marginVertical: 8 },
+  emptyText: {
+    color: "#9ca3af",
+    fontStyle: "italic",
+    paddingVertical: 8,
+  },
   addExpenseButton: {
-    backgroundColor: "#2563eb",
+    backgroundColor: "#059669",
     borderRadius: 8,
     paddingVertical: 10,
     alignItems: "center",
     marginTop: 12,
   },
   addExpenseText: { color: "white", fontWeight: "bold", fontSize: 14 },
+  expensesList: { marginTop: 16 },
+  expensesListTitle: {
+    fontSize: 11,
+    color: "#9ca3af",
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
   expenseItem: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -372,9 +668,11 @@ const s = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#e5e7eb",
   },
-  expenseDesc: { color: "#111827", fontWeight: "600" },
+  expenseLeft: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
+  expenseIcon: { fontSize: 20 },
+  expenseDesc: { color: "#111827", fontWeight: "600", fontSize: 14 },
   expenseDate: { color: "#6b7280", fontSize: 12 },
-  expenseAmount: { color: "#dc2626", fontWeight: "bold" },
+  expenseAmount: { color: "#dc2626", fontWeight: "bold", fontSize: 14 },
   buttonOrange: {
     backgroundColor: "#ea580c",
     borderRadius: 16,
@@ -408,7 +706,13 @@ const s = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
     color: "#111827",
-    marginBottom: 16,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  modalSub: {
+    fontSize: 13,
+    color: "#6b7280",
+    marginBottom: 8,
     textAlign: "center",
   },
   methodRow: { flexDirection: "row", gap: 8, marginTop: 4 },
@@ -419,7 +723,7 @@ const s = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#f3f4f6",
   },
-  methodBtnActive: { backgroundColor: "#2563eb" },
+  methodBtnActive: { backgroundColor: "#059669" },
   methodText: { color: "#4b5563", fontWeight: "600", fontSize: 12 },
   methodTextActive: { color: "white", fontWeight: "bold", fontSize: 12 },
   modalActions: { flexDirection: "row", gap: 10, marginTop: 20 },

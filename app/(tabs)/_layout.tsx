@@ -1,18 +1,24 @@
-import { Tabs } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, StyleSheet } from 'react-native';
+import { Tabs } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Text, StyleSheet } from "react-native";
+import { useTheme } from "../../src/theme/ThemeContext";
 
 export default function TabsLayout() {
+  const { colors } = useTheme();
+
   return (
-    <SafeAreaView style={s.container} edges={['top']}>
+    <SafeAreaView
+      style={[s.container, { backgroundColor: colors.background }]}
+      edges={["top"]}
+    >
       <Tabs
         screenOptions={{
-          tabBarActiveTintColor: '#2563eb',
-          tabBarInactiveTintColor: '#6b7280',
+          tabBarActiveTintColor: colors.tabActive,
+          tabBarInactiveTintColor: colors.tabInactive,
           headerShown: false,
           tabBarStyle: {
-            backgroundColor: '#ffffff',
-            borderTopColor: '#e5e7eb',
+            backgroundColor: colors.background,
+            borderTopColor: colors.border,
             borderTopWidth: 1,
             paddingBottom: 8,
             paddingTop: 8,
@@ -20,7 +26,7 @@ export default function TabsLayout() {
           },
           tabBarLabelStyle: {
             fontSize: 11,
-            fontWeight: '600',
+            fontWeight: "600",
             marginBottom: 4,
           },
         }}
@@ -28,46 +34,45 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="index"
           options={{
-            title: 'Dashboard',
+            title: "Dashboard",
             tabBarIcon: () => <Text style={{ fontSize: 22 }}>🏠</Text>,
           }}
         />
         <Tabs.Screen
           name="trips"
           options={{
-            title: 'Viajes',
+            title: "Viajes",
             tabBarIcon: () => <Text style={{ fontSize: 22 }}>🚚</Text>,
           }}
         />
         <Tabs.Screen
           name="receivable"
           options={{
-            title: 'Por cobrar',
+            title: "Por cobrar",
             tabBarIcon: () => <Text style={{ fontSize: 22 }}>💰</Text>,
           }}
         />
         <Tabs.Screen
           name="expenses"
           options={{
-            title: 'Gastos',
+            title: "Gastos",
             tabBarIcon: () => <Text style={{ fontSize: 22 }}>🧾</Text>,
           }}
         />
-                <Tabs.Screen
+        <Tabs.Screen
           name="reports"
           options={{
-            title: 'Reportes',
+            title: "Reportes",
             tabBarIcon: () => <Text style={{ fontSize: 22 }}>📊</Text>,
           }}
         />
         <Tabs.Screen
           name="settings"
           options={{
-            title: 'Config',
+            title: "Config",
             tabBarIcon: () => <Text style={{ fontSize: 22 }}>️⚙️</Text>,
           }}
         />
-
       </Tabs>
     </SafeAreaView>
   );
@@ -76,6 +81,5 @@ export default function TabsLayout() {
 const s = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
   },
 });

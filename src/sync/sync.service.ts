@@ -133,24 +133,40 @@ export class SyncService {
             const fileName = `${row._local_id}-${Date.now()}.${fileExt}`;
             const filePath = `${payload.user_id}/${fileName}`;
 
-            const base64 = await LegacyFileSystem.readAsStringAsync(
+            // FIX: en React Native, `new Blob([Uint8Array])` NO está soportado
+            // (da "Creating blobs from 'ArrayBuffer' and 'ArrayBufferView'
+            // are not supported"). En su lugar, leemos el archivo como
+            // ArrayBuffer y se lo pasamos directamente a Supabase, que sí
+            // acepta ArrayBuffer/ArrayBufferView en su método upload().
+            const fileInfo = await LegacyFileSystem.getInfoAsync(
+              row.receipt_local,
+            );
+            if (!fileInfo.exists) {
+              throw new Error(`El archivo no existe: ${row.receipt_local}`);
+            }
+
+            // Leer como ArrayBuffer (binario puro)
+            const arrayBuffer = await LegacyFileSystem.readAsStringAsync(
               row.receipt_local,
               {
                 encoding: LegacyFileSystem.EncodingType.Base64,
               },
-            );
-
-            const byteCharacters = atob(base64);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-              byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray], { type: `image/${fileExt}` });
+            ).then((b64) => {
+              // Convertir base64 → ArrayBuffer
+              const binary = atob(b64);
+              const bytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+              }
+              return bytes.buffer; // ArrayBuffer
+            });
 
             const { error: uploadError } = await this.supa.storage
               .from("receipts")
-              .upload(filePath, blob, { contentType: `image/${fileExt}` });
+              .upload(filePath, arrayBuffer, {
+                contentType: `image/${fileExt}`,
+                upsert: false,
+              });
 
             if (uploadError) throw uploadError;
 
@@ -165,9 +181,13 @@ export class SyncService {
           }
         }
 
-        // Resolver trip_id local a server_id
+        // Resolver trip_id local (_local_id) a server_id (UUID).
+        // Aplica a trip_discounts, expenses y payments: todas las tablas
+        // con FK trip_id apuntando al UUID del server.
         if (
-          safeTable === "local_expenses" &&
+          (safeTable === "local_trip_discounts" ||
+            safeTable === "local_expenses" ||
+            safeTable === "local_payments") &&
           row.trip_id &&
           !isUuid(row.trip_id)
         ) {
@@ -181,9 +201,31 @@ export class SyncService {
             payload.trip_id = parentTrip._server_id;
           } else {
             console.log(
-              "[SYNC] Viaje padre no sincronizado aún. Omitiendo gasto.",
+              `[SYNC] Viaje padre ${row.trip_id} no sincronizado aún. Omitiendo ${safeTable}.`,
             );
             continue;
+          }
+        }
+
+        // Resolver truck_id local (_local_id) a server_id (UUID) en trips
+        if (
+          safeTable === "local_trips" &&
+          row.truck_id &&
+          !isUuid(row.truck_id)
+        ) {
+          const parentTruck = await this.db.getFirstAsync<{
+            _server_id: string | null;
+          }>(`SELECT _server_id FROM local_trucks WHERE _local_id = ?`, [
+            row.truck_id,
+          ]);
+
+          if (parentTruck && parentTruck._server_id) {
+            payload.truck_id = parentTruck._server_id;
+          } else {
+            console.log(
+              `[SYNC] Truck ${row.truck_id} no sincronizado aún. Enviando truck_id=NULL.`,
+            );
+            payload.truck_id = null;
           }
         }
 
@@ -326,89 +368,143 @@ export class SyncService {
     );
   }
 
+  // ===== Helpers de resolución de IDs =====
+  // Pull: server UUID → _local_id local
+  private async resolveTripLocalId(
+    serverTripId: string,
+  ): Promise<string | null> {
+    const r = await this.db.getFirstAsync<{ _local_id: string }>(
+      `SELECT _local_id FROM local_trips WHERE _server_id = ?`,
+      [serverTripId],
+    );
+    return r?._local_id ?? null;
+  }
+
+  private async resolveTruckLocalId(
+    serverTruckId: string,
+  ): Promise<string | null> {
+    const r = await this.db.getFirstAsync<{ _local_id: string }>(
+      `SELECT _local_id FROM local_trucks WHERE _server_id = ?`,
+      [serverTruckId],
+    );
+    return r?._local_id ?? null;
+  }
+  // ===== Fin helpers =====
+
   private async insertLocal(table: string, remote: any) {
-    // Filtrar columnas que no existen en local o que necesitan mapeo especial
-    const skipCols = new Set([
-      "id",
-      "user_id",
-      "trip_id",
-      "truck_id",
-      "deleted_at",
-    ]);
-    const cols = Object.keys(remote).filter((c) => !skipCols.has(c));
-
-    // Mapear columnas de Supabase a columnas locales
-    const locals = cols.map((c) => {
-      if (c === "created_at") return "_created_at";
-      if (c === "updated_at") return "_updated_at";
-      return c.replace(/([A-Z])/g, "_$1").toLowerCase();
-    });
-
-    const values = cols.map((c) => remote[c]);
-    const placeholders = cols.map(() => "?").join(",");
-
-    const extraCols = [
-      "_local_id",
-      "_server_id",
-      "_sync_status",
-      "_dirty",
-      "_deleted",
-      "_created_at",
-      "_updated_at",
-    ];
+    const now = new Date().toISOString();
     const localId = `local-${remote.id || Math.random().toString(36).substring(2, 15)}`;
-    const extraVals = [localId, remote.id, "synced", 0, 0];
 
-    const allCols = [...extraCols, ...locals];
-    const allPlaceholders = [...extraCols.map(() => "?"), ...placeholders];
+    // Construir lista de {col, val} garantizando que N columnas ↔ N placeholders ↔ N valores.
+    const colVals: { col: string; val: any }[] = [
+      { col: "_local_id", val: localId },
+      { col: "_server_id", val: remote.id },
+      { col: "_sync_status", val: "synced" },
+      { col: "_dirty", val: 0 },
+      { col: "_deleted", val: 0 },
+      { col: "_created_at", val: remote.created_at ?? now },
+      { col: "_updated_at", val: remote.updated_at ?? now },
+    ];
+
+    const skipCols = new Set(["id", "deleted_at", "created_at", "updated_at"]);
+
+    // user_id: el server lo manda; lo guardamos igual localmente
+    if (remote.user_id !== undefined && remote.user_id !== null) {
+      colVals.push({ col: "user_id", val: remote.user_id });
+      skipCols.add("user_id");
+    } else {
+      skipCols.add("user_id"); // trip_discounts no tiene user_id
+    }
+
+    // truck_id: mapear UUID server → _local_id local
+    if (remote.truck_id !== undefined && remote.truck_id !== null) {
+      const localTruckId = await this.resolveTruckLocalId(remote.truck_id);
+      colVals.push({ col: "truck_id", val: localTruckId ?? null });
+      skipCols.add("truck_id");
+    } else {
+      skipCols.add("truck_id");
+    }
+
+    // trip_id: mapear UUID server → _local_id local
+    if (remote.trip_id !== undefined && remote.trip_id !== null) {
+      const localTripId = await this.resolveTripLocalId(remote.trip_id);
+      colVals.push({ col: "trip_id", val: localTripId ?? null });
+      skipCols.add("trip_id");
+    } else {
+      skipCols.add("trip_id");
+    }
+
+    // Resto de columnas: mapeo camelCase → snake_case
+    for (const c of Object.keys(remote)) {
+      if (skipCols.has(c)) continue;
+      const localCol = c.replace(/([A-Z])/g, "_$1").toLowerCase();
+      colVals.push({ col: localCol, val: remote[c] });
+    }
+
+    const cols = colVals.map((cv) => cv.col);
+    const placeholders = colVals.map(() => "?");
+    const vals = colVals.map((cv) => cv.val);
 
     await this.db.runAsync(
-      `INSERT INTO ${table} (${allCols.join(",")}) VALUES (${allPlaceholders.join(",")})`,
-      [...extraVals, ...values],
+      `INSERT INTO ${table} (${cols.join(",")}) VALUES (${placeholders.join(",")})`,
+      vals,
     );
   }
 
   private async updateLocal(table: string, localId: string, remote: any) {
-    const skipCols = new Set([
-      "id",
-      "user_id",
-      "trip_id",
-      "truck_id",
-      "deleted_at",
-    ]);
-    const cols = Object.keys(remote).filter((c) => !skipCols.has(c));
+    // Construir pares (columnaLocal = ?) con sus valores, en orden.
+    const setPairs: { col: string; val: any }[] = [];
 
-        // Mapear columnas de Supabase a columnas locales
-    const setsArr = cols.map((c) => {
-      const localCol =
-        c === "created_at"
-          ? "_created_at"
-          : c === "updated_at"
-            ? "_updated_at"
-            : c.replace(/([A-Z])/g, "_$1").toLowerCase();
-      return `${localCol} = ?`;
-    });                                                  // ← ARRAY (sin .join)
+    const skipCols = new Set(["id", "deleted_at", "created_at", "updated_at"]);
 
-    const values = cols.map((c) => remote[c]);
+    // user_id
+    if (remote.user_id !== undefined && remote.user_id !== null) {
+      setPairs.push({ col: "user_id", val: remote.user_id });
+      skipCols.add("user_id");
+    } else {
+      skipCols.add("user_id");
+    }
 
-    // FIX: build dinámico del SET — nunca produce coma inicial
-    // (si cols=[], solo se actualizan las columnas internas)
-    const internalSets = [
-      ...setsArr,
-      "_server_id = ?",
-      "_dirty = 0",
-      "_sync_status = 'synced'",
-      "_updated_at = ?",
-    ].join(", ");
+    // truck_id (server UUID → _local_id)
+    if (remote.truck_id !== undefined && remote.truck_id !== null) {
+      const localTruckId = await this.resolveTruckLocalId(remote.truck_id);
+      setPairs.push({ col: "truck_id", val: localTruckId ?? null });
+      skipCols.add("truck_id");
+    } else {
+      skipCols.add("truck_id");
+    }
+
+    // trip_id (server UUID → _local_id)
+    if (remote.trip_id !== undefined && remote.trip_id !== null) {
+      const localTripId = await this.resolveTripLocalId(remote.trip_id);
+      setPairs.push({ col: "trip_id", val: localTripId ?? null });
+      skipCols.add("trip_id");
+    } else {
+      skipCols.add("trip_id");
+    }
+
+    // Resto de columnas con mapeo camelCase → snake_case
+    for (const c of Object.keys(remote)) {
+      if (skipCols.has(c)) continue;
+      const localCol = c.replace(/([A-Z])/g, "_$1").toLowerCase();
+      setPairs.push({ col: localCol, val: remote[c] });
+    }
+
+    // Columnas internas: forzar sync
+    setPairs.push({ col: "_server_id", val: remote.id });
+    setPairs.push({ col: "_dirty", val: 0 });
+    setPairs.push({ col: "_sync_status", val: "synced" });
+    setPairs.push({
+      col: "_updated_at",
+      val: remote.updated_at ?? new Date().toISOString(),
+    });
+
+    const setClause = setPairs.map((p) => `${p.col} = ?`).join(", ");
+    const setVals = setPairs.map((p) => p.val);
 
     await this.db.runAsync(
-      `UPDATE ${table} SET ${internalSets} WHERE _local_id = ?`,
-      [
-        ...values,
-        remote.id,
-        remote.updated_at ?? new Date().toISOString(),
-        localId,
-      ],
+      `UPDATE ${table} SET ${setClause} WHERE _local_id = ?`,
+      [...setVals, localId],
     );
   }
 

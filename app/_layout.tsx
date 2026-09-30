@@ -4,6 +4,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { initializeDatabase } from "../src/db/init";
 import { useAuthStore } from "../src/stores/auth.store";
 import { initializeSync } from "../src/sync/init";
+import { ThemeProvider, useTheme } from "../src/theme/ThemeContext";
 import {
   View,
   Text,
@@ -13,6 +14,15 @@ import {
 } from "react-native";
 
 export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <RootLayoutInner />
+    </ThemeProvider>
+  );
+}
+
+function RootLayoutInner() {
+  const { colors, resolved } = useTheme();
   const [ready, setReady] = useState(false);
   const { session, loading: authLoading } = useAuthStore();
 
@@ -66,7 +76,7 @@ export default function RootLayout() {
           flex: 1,
           justifyContent: "center",
           alignItems: "center",
-          backgroundColor: "white",
+          backgroundColor: colors.background,
           padding: 24,
         }}
       >
@@ -75,7 +85,7 @@ export default function RootLayout() {
           style={{
             fontSize: 18,
             fontWeight: "bold",
-            color: "#dc2626",
+            color: colors.danger,
             marginBottom: 12,
             textAlign: "center",
           }}
@@ -84,7 +94,7 @@ export default function RootLayout() {
         </Text>
         <Text
           style={{
-            color: "#6b7280",
+            color: colors.textMuted,
             textAlign: "center",
             marginBottom: 8,
             lineHeight: 20,
@@ -94,7 +104,7 @@ export default function RootLayout() {
         </Text>
         <Text
           style={{
-            color: "#111827",
+            color: colors.text,
             fontFamily: "monospace",
             textAlign: "center",
             marginBottom: 24,
@@ -106,13 +116,15 @@ export default function RootLayout() {
         <Pressable
           onPress={retry}
           style={{
-            backgroundColor: "#2563eb",
+            backgroundColor: colors.primary,
             paddingHorizontal: 24,
             paddingVertical: 12,
             borderRadius: 8,
           }}
         >
-          <Text style={{ color: "white", fontWeight: "bold" }}>Reintentar</Text>
+          <Text style={{ color: colors.textOnPrimary, fontWeight: "bold" }}>
+            Reintentar
+          </Text>
         </Pressable>
       </View>
     );
@@ -126,11 +138,11 @@ export default function RootLayout() {
           flex: 1,
           justifyContent: "center",
           alignItems: "center",
-          backgroundColor: "white",
+          backgroundColor: colors.background,
         }}
       >
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={{ marginTop: 10, color: "#6b7280" }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 10, color: colors.textMuted }}>
           Cargando Truck Finance...
         </Text>
       </View>
@@ -141,13 +153,14 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <StatusBar
-        barStyle="dark-content"
+        barStyle={resolved === "dark" ? "light-content" : "dark-content"}
         backgroundColor="transparent"
         translucent
       />
 
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="trucks" options={{ title: "Mis Camiones" }} />
         <Stack.Screen
           name="trips/new"
           options={{ title: "Nuevo viaje", presentation: "modal" }}

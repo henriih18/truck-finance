@@ -5,6 +5,9 @@ import {
   type TripInput,
 } from "../../finance/calculator";
 import { generateId } from "../../utils/id";
+import { PaymentsRepository } from "./payments.repo";
+import { ExpensesRepository } from "./expenses.repo";
+import { TrucksRepository } from "./trucks.repo";
 
 export type NewTrip = {
   userId: string;
@@ -132,6 +135,27 @@ export class TripsRepository {
       );
     }
 
+    // Persistir gastos automáticos generados por el calculador:
+    //  - Descargue (siempre, si hay motos)
+    //  - Concepto 10% cuando tenPctKind === 'expense'
+    // Estos se insertan en local_expenses con el trip_id del viaje recién creado,
+    // para que aparezcan en el detalle del viaje y se descuenten del anticipo disponible.
+    if (f.autoExpenses.length > 0) {
+      const expRepo = new ExpensesRepository(this.db);
+      for (const auto of f.autoExpenses) {
+        if (auto.amount <= 0) continue; // skip si es 0 (p.ej. 0 motos)
+        await expRepo.create({
+          userId: input.userId,
+          tripId: localId,
+          categoryCode: auto.categoryCode,
+          description: auto.description,
+          amount: auto.amount,
+          date: input.date,
+          notes: `Generado automáticamente (${auto.code})`,
+        });
+      }
+    }
+
     return this.getById(localId) as Promise<TripRow>;
   }
 
@@ -148,12 +172,40 @@ export class TripsRepository {
     );
   }
 
-  async finish(localId: string) {
+  /**
+   * Finaliza el viaje.
+   * - Si se pasa finalMileage, actualiza final_mileage del viaje.
+   * - Si el viaje tiene truck_id, actualiza el kilometraje del camión
+   *   al final_mileage (o lo que se pase) para que el próximo viaje
+   *   lo sugiera como inicial automáticamente.
+   */
+  async finish(localId: string, finalMileage?: number) {
     const now = new Date().toISOString();
-    await this.db.runAsync(
-      `UPDATE local_trips SET status = 'finished', _dirty = 1, _sync_status = 'pending', _updated_at = ? WHERE _local_id = ?`,
-      [now, localId],
-    );
+
+    if (finalMileage != null && !Number.isNaN(finalMileage)) {
+      await this.db.runAsync(
+        `UPDATE local_trips
+         SET status = 'finished',
+             final_mileage = ?,
+             _dirty = 1,
+             _sync_status = 'pending',
+             _updated_at = ?
+         WHERE _local_id = ?`,
+        [finalMileage, now, localId],
+      );
+    } else {
+      await this.db.runAsync(
+        `UPDATE local_trips SET status = 'finished', _dirty = 1, _sync_status = 'pending', _updated_at = ? WHERE _local_id = ?`,
+        [now, localId],
+      );
+    }
+
+    // Actualizar kilometraje del camión si el viaje tiene uno asignado
+    const trip = await this.getById(localId);
+    if (trip?.truck_id && finalMileage != null && !Number.isNaN(finalMileage)) {
+      const trucks = new TrucksRepository(this.db);
+      await trucks.updateMileage(trip.truck_id, finalMileage);
+    }
   }
 
   /* async markBalancePaid(
@@ -185,17 +237,37 @@ export class TripsRepository {
     notes?: string,
   ): Promise<void> {
     const now = new Date().toISOString();
+
+    // 1. Actualizar el viaje: balance_status='paid' + datos del pago.
     await this.db.runAsync(
-      `UPDATE local_trips 
-       SET balance_status = 'paid', 
-           balance_paid_at = ?, 
-           balance_amount = ?, 
-           balance_method = ?, 
+      `UPDATE local_trips
+       SET balance_status = 'paid',
+           balance_paid_at = ?,
+           balance_amount = ?,
+           balance_method = ?,
            balance_notes = ?,
            _updated_at = ?,
-           _dirty = 1
+           _dirty = 1,
+           _sync_status = 'pending'
        WHERE _local_id = ?`,
       [date, amount, method ?? null, notes ?? null, now, localId],
     );
+
+    // 2. Insertar el pago en local_payments (kind='balance') para tener
+    //    trazabilidad histórica. Antes solo se actualizaba el viaje,
+    //    pero esto permite listar pagos por viaje y reportes.
+    const trip = await this.getById(localId);
+    if (trip) {
+      const payments = new PaymentsRepository(this.db);
+      await payments.create({
+        userId: trip.user_id,
+        tripId: localId,
+        kind: "balance",
+        amount,
+        date,
+        method,
+        notes,
+      });
+    }
   }
 }

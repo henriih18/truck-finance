@@ -9,6 +9,7 @@ import {
 import { Link } from "expo-router";
 import { useTrips } from "../../src/hooks/useTrips";
 import { useTripsRepo } from "../../src/hooks/useTripsRepo";
+import { SyncIndicator } from "../../src/ui/SyncIndicator";
 
 export default function Receivable() {
   const allTrips = useTrips();
@@ -74,6 +75,7 @@ export default function Receivable() {
     <View style={s.container}>
       <View style={s.header}>
         <Text style={s.title}>Por Cobrar</Text>
+        <SyncIndicator />
       </View>
 
       <View style={s.totalCard}>
@@ -149,7 +151,14 @@ export default function Receivable() {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#ffffff" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: { padding: 16, borderBottomWidth: 1, borderBottomColor: "#e5e7eb" },
+  header: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   title: { fontSize: 24, fontWeight: "bold", color: "#111827" },
   totalCard: {
     backgroundColor: "#dc2626",
