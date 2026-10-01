@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -30,6 +30,10 @@ export default function NewTrip() {
   const [motoQty, setMotoQty] = useState("");
   const [grossFreight, setGrossFreight] = useState("");
   const [tieDeducted, setTieDeducted] = useState(true);
+  const [tieFixed, setTieFixed] = useState("");
+  const [tiePerMoto, setTiePerMoto] = useState("");
+  const [advancePct, setAdvancePct] = useState("");
+  const [unloadPerMoto, setUnloadPerMoto] = useState("");
   const [truckId, setTruckId] = useState<string | null>(null);
   const [truckPickerVisible, setTruckPickerVisible] = useState(false);
   const [initialMileage, setInitialMileage] = useState("");
@@ -38,6 +42,17 @@ export default function NewTrip() {
 
   const gf = Number(grossFreight) || 0;
   const mq = Number(motoQty) || 0;
+
+  // Cuando se cargan los settings, pre-llenar los campos per-viaje con los
+  // defaults. El usuario puede editarlos antes de guardar el viaje.
+  useEffect(() => {
+    if (!settings) return;
+    setTieDeducted(settings.tieMode === "deduct");
+    setTieFixed(String(settings.tieFixed));
+    setTiePerMoto(String(settings.tiePerMoto));
+    setAdvancePct(String(settings.advancePct));
+    setUnloadPerMoto(String(settings.unloadPerMoto));
+  }, [settings]);
 
   // Cuando se selecciona un camión, sugerir su kilometraje actual como inicial
   // (solo si el campo está vacío o si cambia el camión seleccionado)
@@ -85,6 +100,10 @@ export default function NewTrip() {
           motoQty: mq,
           grossFreight: gf,
           tieDeducted,
+          tieFixed: tieFixed ? Number(tieFixed) : undefined,
+          tiePerMoto: tiePerMoto ? Number(tiePerMoto) : undefined,
+          advancePct: advancePct ? Number(advancePct) : undefined,
+          unloadPerMoto: unloadPerMoto ? Number(unloadPerMoto) : undefined,
           initialMileage: initialMileage ? Number(initialMileage) : undefined,
         },
         settings,
@@ -186,6 +205,48 @@ export default function NewTrip() {
           </Text>
         </Pressable>
       </View>
+
+      {tieDeducted ? (
+        <>
+          <Text style={s.label}>VALOR DEL AMARRE ($)</Text>
+          <TextInput
+            style={s.input}
+            value={tieFixed}
+            onChangeText={setTieFixed}
+            keyboardType="numeric"
+            placeholder="0"
+          />
+        </>
+      ) : (
+        <>
+          <Text style={s.label}>VALOR DEL AMARRE POR MOTO ($)</Text>
+          <TextInput
+            style={s.input}
+            value={tiePerMoto}
+            onChangeText={setTiePerMoto}
+            keyboardType="numeric"
+            placeholder="0"
+          />
+        </>
+      )}
+
+      <Text style={s.label}>ANTICIPO (%)</Text>
+      <TextInput
+        style={s.input}
+        value={advancePct}
+        onChangeText={setAdvancePct}
+        keyboardType="numeric"
+        placeholder="70"
+      />
+
+      <Text style={s.label}>DESCARGUE POR MOTO ($)</Text>
+      <TextInput
+        style={s.input}
+        value={unloadPerMoto}
+        onChangeText={setUnloadPerMoto}
+        keyboardType="numeric"
+        placeholder="0"
+      />
 
       <Text style={s.label}>KILOMETRAJE INICIAL (opcional)</Text>
       <TextInput

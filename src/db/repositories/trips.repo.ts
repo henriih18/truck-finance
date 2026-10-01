@@ -21,6 +21,11 @@ export type NewTrip = {
   motoQty: number;
   grossFreight: number;
   tieDeducted: boolean;
+  // Per-viaje overrides (opcionales; si no se pasan, se usan los de settings)
+  tieFixed?: number;
+  tiePerMoto?: number;
+  advancePct?: number;
+  unloadPerMoto?: number;
   notes?: string;
   initialMileage?: number;
 };
@@ -55,21 +60,45 @@ export type TripRow = {
   notes: string | null;
   initial_mileage: number | null;
   final_mileage: number | null;
+  tie_deducted: number | null;
+  tie_fixed: number | null;
+  tie_per_moto: number | null;
+  advance_pct: number | null;
+  unload_per_moto: number | null;
 };
 
 export class TripsRepository {
   constructor(private db: SQLiteDatabase) {}
 
   async create(input: NewTrip, settings: Settings): Promise<TripRow> {
+    // Construir "effective settings": override por-viaje sobre los defaults
+    // globales. Si el input trae el campo, se usa; si no, se usa settings.
+    const effectiveSettings: Settings = {
+      ...settings,
+      tieMode: input.tieDeducted ? "deduct" : "charge_per_moto",
+      tieFixed: input.tieFixed ?? settings.tieFixed,
+      tiePerMoto: input.tiePerMoto ?? settings.tiePerMoto,
+      advancePct: input.advancePct ?? settings.advancePct,
+      unloadPerMoto: input.unloadPerMoto ?? settings.unloadPerMoto,
+    };
+
     const ti: TripInput = {
       grossFreight: input.grossFreight,
       motoQty: input.motoQty,
       tieDeducted: input.tieDeducted,
     };
-    const f = calculateTripFinancials(settings, ti);
+    const f = calculateTripFinancials(effectiveSettings, ti);
 
     const now = new Date().toISOString();
     const localId = generateId();
+
+    // Valores efectivos a persistir en el viaje (para tener su "snapshot"
+    // aunque luego cambien los defaults globales).
+    const tieDeductedVal = input.tieDeducted ? 1 : 0;
+    const tieFixedVal = input.tieFixed ?? settings.tieFixed;
+    const tiePerMotoVal = input.tiePerMoto ?? settings.tiePerMoto;
+    const advancePctVal = input.advancePct ?? settings.advancePct;
+    const unloadPerMotoVal = input.unloadPerMoto ?? settings.unloadPerMoto;
 
     await this.db.runAsync(
       `INSERT INTO local_trips (
@@ -77,8 +106,9 @@ export class TripsRepository {
         user_id, truck_id, trip_number, date, client, origin, destination, cargo_type,
         moto_qty, gross_freight, net_freight, advance, balance, status, balance_status,
         balance_paid_at, balance_amount, balance_method, balance_notes, notes,
-        initial_mileage, final_mileage
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        initial_mileage, final_mileage,
+        tie_deducted, tie_fixed, tie_per_moto, advance_pct, unload_per_moto
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         localId,
         null,
@@ -109,6 +139,11 @@ export class TripsRepository {
         input.notes ?? null,
         input.initialMileage ?? null,
         null,
+        tieDeductedVal,
+        tieFixedVal,
+        tiePerMotoVal,
+        advancePctVal,
+        unloadPerMotoVal,
       ],
     );
 

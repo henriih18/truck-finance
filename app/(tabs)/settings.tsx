@@ -193,29 +193,43 @@ export default function SettingsScreen() {
       </Section>
 
       {/* Amarre */}
-      <Section title="AMARRE">
+      <Section title="AMARRE (valor por defecto para nuevos viajes)">
         <Text style={s.label}>¿Cómo se cobra el amarre?</Text>
         <View style={s.row}>
           <Pressable
-            style={[s.choice, tieMode === "deduct" && s.choiceActive]}
+            style={[
+              s.choice,
+              { backgroundColor: colors.surfaceMuted }, // fondo inactivo
+              tieMode === "deduct" && { backgroundColor: colors.primary }, // fondo activo
+            ]}
             onPress={() => setTieMode("deduct")}
           >
             <Text
-              style={tieMode === "deduct" ? s.choiceTextActive : s.choiceText}
+              style={[
+                s.choiceText,
+                { color: colors.textSecondary }, // texto inactivo
+                tieMode === "deduct" && s.choiceTextActive, // texto activo
+              ]}
             >
               Descuento fijo
             </Text>
           </Pressable>
           <Pressable
-            style={[s.choice, tieMode === "charge_per_moto" && s.choiceActive]}
+            style={[
+              s.choice,
+              { backgroundColor: colors.surfaceMuted },
+              tieMode === "charge_per_moto" && {
+                backgroundColor: colors.primary,
+              },
+            ]}
             onPress={() => setTieMode("charge_per_moto")}
           >
             <Text
-              style={
-                tieMode === "charge_per_moto"
-                  ? s.choiceTextActive
-                  : s.choiceText
-              }
+              style={[
+                s.choiceText,
+                { color: colors.textSecondary },
+                tieMode === "charge_per_moto" && s.choiceTextActive,
+              ]}
             >
               Por moto
             </Text>
@@ -240,7 +254,7 @@ export default function SettingsScreen() {
       </Section>
 
       {/* Anticipo */}
-      <Section title="ANTICIPO">
+      <Section title="ANTICIPO (valor por defecto para nuevos viajes)">
         <Field
           label="Porcentaje del anticipo (%)"
           value={advancePct}
@@ -250,7 +264,7 @@ export default function SettingsScreen() {
       </Section>
 
       {/* Descargue */}
-      <Section title="DESCARGUE">
+      <Section title="DESCARGUE (valor por defecto para nuevos viajes)">
         <Field
           label="Valor por moto ($)"
           value={unloadPerMoto}

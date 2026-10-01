@@ -163,4 +163,11 @@ export const MIGRATIONS: string[] = [
   //    SQLite no soporta ADD COLUMN IF NOT EXISTS; usar try/catch en el init.
   //    Esta sentencia falla si la columna ya existe (es idempotente vía init.ts).
   `ALTER TABLE local_expenses ADD COLUMN category_id TEXT;`,
+
+  // ===== Per-viaje: amarre, anticipo, descargue (mover de settings a trips) =====
+  `ALTER TABLE local_trips ADD COLUMN tie_deducted INTEGER;`,
+  `ALTER TABLE local_trips ADD COLUMN tie_fixed REAL;`,
+  `ALTER TABLE local_trips ADD COLUMN tie_per_moto REAL;`,
+  `ALTER TABLE local_trips ADD COLUMN advance_pct REAL;`,
+  `ALTER TABLE local_trips ADD COLUMN unload_per_moto REAL;`,
 ];
