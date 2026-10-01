@@ -10,7 +10,7 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 
   try {
     // Abrir la base de datos en el directorio de documentos del dispositivo
-    const db = await SQLite.openDatabaseAsync('truck_finance.db');
+    const db = await SQLite.openDatabaseAsync('truck_finance_v3.db');
     dbInstance = db;
     console.log('[DB] Conexión establecida');
     return db;

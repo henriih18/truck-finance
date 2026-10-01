@@ -1,9 +1,10 @@
-import type { SQLiteDatabase } from 'expo-sqlite';
-import { generateId } from '../../utils/id';
+import type { SQLiteDatabase } from "expo-sqlite";
+import { generateId } from "../../utils/id";
 
 export type NewExpense = {
   userId: string;
   tripId?: string;
+  categoryId?: string;
   categoryCode: string;
   description?: string;
   amount: number;
@@ -23,6 +24,7 @@ export type ExpenseRow = {
   _updated_at: string;
   user_id: string;
   trip_id: string | null;
+  category_id: string | null;
   category_code: string;
   description: string | null;
   amount: number;
@@ -43,14 +45,28 @@ export class ExpensesRepository {
     await this.db.runAsync(
       `INSERT INTO local_expenses (
         _local_id, _server_id, _sync_status, _dirty, _deleted, _created_at, _updated_at,
-        user_id, trip_id, category_code, description, amount, date, mileage,
+        user_id, trip_id, category_id, category_code, description, amount, date, mileage,
         receipt_url, receipt_local, notes
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        localId, null, 'pending', 1, 0, now, now,
-        input.userId, input.tripId ?? null, input.categoryCode,
-        input.description ?? null, input.amount, input.date,
-        input.mileage ?? null, null, input.receiptLocal ?? null, input.notes ?? null,
+        localId,
+        null,
+        "pending",
+        1,
+        0,
+        now,
+        now,
+        input.userId,
+        input.tripId ?? null,
+        input.categoryId ?? null,
+        input.categoryCode,
+        input.description ?? null,
+        input.amount,
+        input.date,
+        input.mileage ?? null,
+        null,
+        input.receiptLocal ?? null,
+        input.notes ?? null,
       ],
     );
 

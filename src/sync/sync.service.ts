@@ -7,16 +7,20 @@ import { useAuthStore } from "../stores/auth.store";
 type TableMap = {
   local_trips: "trips";
   local_expenses: "expenses";
+  local_expense_categories: "expense_categories";
   local_payments: "payments";
   local_trucks: "trucks";
   local_trip_discounts: "trip_discounts";
   local_settings: "settings";
 };
 
+// Orden importante: padres antes que hijos (FK)
+// settings → trucks → trips → expense_categories → trip_discounts → expenses → payments
 const TABLES: (keyof TableMap)[] = [
   "local_settings",
   "local_trucks",
-  "local_trips",
+  "local_trips", // ← antes de trip_discounts/expenses/payments
+  "local_expense_categories", // ← antes de expenses
   "local_trip_discounts",
   "local_expenses",
   "local_payments",
@@ -25,14 +29,25 @@ const TABLES: (keyof TableMap)[] = [
 const REMOTE_TABLES: Record<keyof TableMap, string> = {
   local_trips: "trips",
   local_expenses: "expenses",
+  local_expense_categories: "expense_categories",
   local_payments: "payments",
   local_trucks: "trucks",
   local_trip_discounts: "trip_discounts",
   local_settings: "settings",
 };
 
-// Tablas que tienen restricción UNIQUE en user_id (requieren UPSERT)
-const UPSERT_TABLES = new Set(["local_settings"]);
+// Tablas que no tienen user_id directo (lo resuelven vía FK al parent)
+const TABLES_WITHOUT_USER_ID = new Set<keyof TableMap>([
+  "local_trip_discounts",
+  // local_expense_categories SÍ tiene user_id directo
+]);
+
+// Tablas que requieren UPSERT porque tienen un UNIQUE constraint en el server.
+// Mapea: tabla local → columnas de conflicto (coma-separadas si es compuesto)
+const UPSERT_TABLES: Partial<Record<keyof TableMap, string>> = {
+  local_settings: "user_id",
+  local_expense_categories: "user_id,code",
+};
 
 const ALLOWED_TABLES = new Set(TABLES);
 
@@ -116,8 +131,9 @@ export class SyncService {
       for (const row of dirty) {
         const payload = localToRemoteRow(row);
 
-        // No agregar user_id a trip_discounts
-        if (safeTable !== "local_trip_discounts") {
+        // Agregar user_id a las tablas que lo tienen directo.
+        // trip_discounts no tiene user_id, se resuelve por su FK a trips.
+        if (!TABLES_WITHOUT_USER_ID.has(safeTable)) {
           payload.user_id = useAuthStore.getState().user?.id;
         }
 
@@ -229,6 +245,29 @@ export class SyncService {
           }
         }
 
+        // Resolver category_id local (_local_id) a server_id (UUID) en expenses
+        if (
+          safeTable === "local_expenses" &&
+          row.category_id &&
+          !isUuid(row.category_id)
+        ) {
+          const parentCategory = await this.db.getFirstAsync<{
+            _server_id: string | null;
+          }>(
+            `SELECT _server_id FROM local_expense_categories WHERE _local_id = ?`,
+            [row.category_id],
+          );
+
+          if (parentCategory && parentCategory._server_id) {
+            payload.category_id = parentCategory._server_id;
+          } else {
+            console.log(
+              `[SYNC] Categoría ${row.category_id} no sincronizada aún. Enviando category_id=NULL.`,
+            );
+            payload.category_id = null;
+          }
+        }
+
         let ok = false;
         try {
           if (row._deleted) {
@@ -264,11 +303,14 @@ export class SyncService {
             ok = true;
           } else {
             // INSERT nuevo
-            if (UPSERT_TABLES.has(safeTable)) {
-              // Para settings: usar upsert (INSERT ... ON CONFLICT DO UPDATE)
+            if (safeTable in UPSERT_TABLES) {
+              // Para tablas con UNIQUE constraint (settings, expense_categories):
+              // usar upsert (INSERT ... ON CONFLICT DO UPDATE) con el onConflict
+              // correspondiente a esa constraint.
+              const onConflict = UPSERT_TABLES[safeTable]!;
               const { data, error } = await this.supa
                 .from(remoteTable)
-                .upsert(payload, { onConflict: "user_id" })
+                .upsert(payload, { onConflict })
                 .select("id")
                 .single();
               if (error) throw error;
@@ -300,7 +342,36 @@ export class SyncService {
             );
           }
         } catch (err: any) {
-          console.error(`[sync] push error en ${safeTable}:`, err);
+          // Clasificar el tipo de error para log más claro.
+          const code = err?.code;
+          const msg: string = err?.message ?? "";
+          const isFkViolation =
+            code === "23503" || msg.includes("violates foreign key constraint");
+          const isRlsViolation =
+            code === "42501" ||
+            msg.includes("row-level security policy") ||
+            msg.includes("new row violates row-level");
+
+          if (isFkViolation) {
+            // La FK referenciada no existe en el servidor (probablemente
+            // _server_id obsoleto tras resetear el schema). Dejamos la fila
+            // dirty para reintentar el próximo ciclo; no hacemos operaciones
+            // extra en la DB local para evitar "database is locked".
+            console.warn(
+              `[SYNC] FK violada en ${safeTable} (fila ${row._local_id}). ` +
+                `Dejando dirty para próximo ciclo. Detalle: ${msg}`,
+            );
+          } else if (isRlsViolation) {
+            // RLS falla normalmente porque el padre (trip) aún no existe
+            // en el servidor o fue soft-deleted. Reintentar el próximo ciclo.
+            console.warn(
+              `[SYNC] RLS bloqueó push en ${safeTable} (fila ${row._local_id}). ` +
+                `Posiblemente el viaje padre aún no se ha sincronizado. ` +
+                `Reintentando en próximo ciclo. Detalle: ${msg}`,
+            );
+          } else {
+            console.error(`[sync] push error en ${safeTable}:`, err);
+          }
         }
       }
     }
@@ -389,6 +460,16 @@ export class SyncService {
     );
     return r?._local_id ?? null;
   }
+
+  private async resolveCategoryLocalId(
+    serverCategoryId: string,
+  ): Promise<string | null> {
+    const r = await this.db.getFirstAsync<{ _local_id: string }>(
+      `SELECT _local_id FROM local_expense_categories WHERE _server_id = ?`,
+      [serverCategoryId],
+    );
+    return r?._local_id ?? null;
+  }
   // ===== Fin helpers =====
 
   private async insertLocal(table: string, remote: any) {
@@ -432,6 +513,17 @@ export class SyncService {
       skipCols.add("trip_id");
     } else {
       skipCols.add("trip_id");
+    }
+
+    // category_id: mapear UUID server → _local_id local (solo en expenses)
+    if (remote.category_id !== undefined && remote.category_id !== null) {
+      const localCategoryId = await this.resolveCategoryLocalId(
+        remote.category_id,
+      );
+      colVals.push({ col: "category_id", val: localCategoryId ?? null });
+      skipCols.add("category_id");
+    } else {
+      skipCols.add("category_id");
     }
 
     // Resto de columnas: mapeo camelCase → snake_case
@@ -481,6 +573,17 @@ export class SyncService {
       skipCols.add("trip_id");
     } else {
       skipCols.add("trip_id");
+    }
+
+    // category_id (server UUID → _local_id) — solo aplica a expenses
+    if (remote.category_id !== undefined && remote.category_id !== null) {
+      const localCategoryId = await this.resolveCategoryLocalId(
+        remote.category_id,
+      );
+      setPairs.push({ col: "category_id", val: localCategoryId ?? null });
+      skipCols.add("category_id");
+    } else {
+      skipCols.add("category_id");
     }
 
     // Resto de columnas con mapeo camelCase → snake_case

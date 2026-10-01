@@ -19,7 +19,7 @@ export function useGeneralExpenses(): ExpenseRow[] {
 
     load();
     // Recargar cada 2 segundos por si se agregó uno nuevo
-    const interval = setInterval(load, 2000);
+    const interval = setInterval(load, 10_000);
     return () => clearInterval(interval);
   }, []);
 

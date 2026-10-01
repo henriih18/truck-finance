@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   View,
   Text,
@@ -15,27 +15,36 @@ import { useTripsRepo } from "../../../src/hooks/useTripsRepo";
 import { ExpensesRepository } from "../../../src/db/repositories/expenses.repo";
 import { getDatabase } from "../../../src/db/connection";
 import { useAuthStore } from "../../../src/stores/auth.store";
+import { useExpenseCategories } from "../../../src/hooks/useExpenseCategories";
 
-type Category = "COMBUSTIBLE" | "PEAJE" | "DESCARGUE" | "OTRO";
+const CATEGORY_ICONS: Record<string, string> = {
+  COMBUSTIBLE: "⛽",
+  PEAJE: "🛣️",
+  DESCARGUE: "📦",
+  OTRO_VIAJE: "🔧",
+  MANTENIMIENTO: "🔧",
+  OTRO: "📦",
+};
 
 export default function AddExpense() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const repo = useTripsRepo();
+  const { categories, loading } = useExpenseCategories();
 
-  const [category, setCategory] = useState<Category>("COMBUSTIBLE");
+  const tripCategories = categories.filter((c) => c.is_trip_expense === 1);
+
+  const [selectedLocalId, setSelectedLocalId] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [mileage, setMileage] = useState("");
   const [receiptUri, setReceiptUri] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  // Si se selecciona "Descargue", podemos sugerir el monto, pero lo dejamos editable
-  useEffect(() => {
-    if (category === "DESCARGUE" && !amount) {
-      // El usuario podrá ajustarlo si es necesario
-    }
-  }, [category]);
+  const selected =
+    tripCategories.find((c) => c._local_id === selectedLocalId) ??
+    tripCategories[0] ??
+    null;
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -43,10 +52,8 @@ export default function AddExpense() {
       allowsEditing: true,
       quality: 0.7,
     });
-
-    if (!result.canceled && result.assets[0]) {
+    if (!result.canceled && result.assets[0])
       setReceiptUri(result.assets[0].uri);
-    }
   };
 
   const takePhoto = async () => {
@@ -58,24 +65,25 @@ export default function AddExpense() {
       );
       return;
     }
-
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       quality: 0.7,
     });
-
-    if (!result.canceled && result.assets[0]) {
+    if (!result.canceled && result.assets[0])
       setReceiptUri(result.assets[0].uri);
-    }
   };
 
   const handleSave = async () => {
+    if (!selected) {
+      Alert.alert("Error", "Selecciona una categoría.");
+      return;
+    }
     if (!amount || Number(amount) <= 0) {
       Alert.alert("Error", "Ingresa un valor válido para el gasto.");
       return;
     }
 
-    setLoading(true);
+    setSaving(true);
     try {
       const db = await getDatabase();
       const expensesRepo = new ExpensesRepository(db);
@@ -83,8 +91,9 @@ export default function AddExpense() {
       await expensesRepo.create({
         userId: useAuthStore.getState().user?.id || "local-user",
         tripId: id,
-        categoryCode: category,
-        description: description || category,
+        categoryId: selected._local_id,
+        categoryCode: selected.code,
+        description: description || selected.label,
         amount: Number(amount),
         date: new Date().toISOString().slice(0, 10),
         mileage: mileage ? Number(mileage) : undefined,
@@ -96,11 +105,11 @@ export default function AddExpense() {
     } catch (e: any) {
       Alert.alert("Error", e?.message || "No se pudo guardar el gasto");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  if (!repo) {
+  if (loading || !repo) {
     return (
       <View style={s.center}>
         <ActivityIndicator size="large" color="#2563eb" />
@@ -115,27 +124,25 @@ export default function AddExpense() {
 
       <Text style={s.label}>CATEGORÍA</Text>
       <View style={s.categoryRow}>
-        {(["COMBUSTIBLE", "PEAJE", "DESCARGUE", "OTRO"] as Category[]).map(
-          (cat) => (
+        {tripCategories.map((cat) => {
+          const isActive = selected?._local_id === cat._local_id;
+          const icon = CATEGORY_ICONS[cat.code] || "📦";
+          return (
             <Pressable
-              key={cat}
-              style={[s.catButton, category === cat && s.catButtonActive]}
-              onPress={() => setCategory(cat)}
+              key={cat._local_id}
+              style={[s.catButton, isActive && s.catButtonActive]}
+              onPress={() => setSelectedLocalId(cat._local_id)}
             >
-              <Text style={[s.catText, category === cat && s.catTextActive]}>
-                {cat === "COMBUSTIBLE"
-                  ? "⛽"
-                  : cat === "PEAJE"
-                    ? "🛣️"
-                    : cat === "DESCARGUE"
-                      ? "📦"
-                      : "🔧"}{" "}
-                {cat}
+              <Text style={[s.catText, isActive && s.catTextActive]}>
+                {icon} {cat.label}
               </Text>
             </Pressable>
-          ),
-        )}
+          );
+        })}
       </View>
+      {tripCategories.length === 0 && (
+        <Text style={s.empty}>No hay categorías de viaje todavía.</Text>
+      )}
 
       <Text style={s.label}>VALOR ($)</Text>
       <TextInput
@@ -151,7 +158,9 @@ export default function AddExpense() {
         style={s.input}
         value={description}
         onChangeText={setDescription}
-        placeholder="Ej: Gasolina en Shell"
+        placeholder={
+          selected ? `Ej: ${selected.label} en Shell` : "Ej: Gasolina en Shell"
+        }
       />
 
       <Text style={s.label}>KILOMETRAJE (Opcional)</Text>
@@ -182,12 +191,12 @@ export default function AddExpense() {
       )}
 
       <Pressable
-        style={[s.button, loading && s.buttonDisabled]}
+        style={[s.button, saving && s.buttonDisabled]}
         onPress={handleSave}
-        disabled={loading}
+        disabled={saving}
       >
         <Text style={s.buttonText}>
-          {loading ? "Guardando..." : "GUARDAR GASTO"}
+          {saving ? "Guardando..." : "GUARDAR GASTO"}
         </Text>
       </Pressable>
     </ScrollView>
@@ -233,6 +242,7 @@ const s = StyleSheet.create({
   catButtonActive: { backgroundColor: "#2563eb", borderColor: "#2563eb" },
   catText: { color: "#374151", fontSize: 13, fontWeight: "600" },
   catTextActive: { color: "white" },
+  empty: { color: "#9ca3af", fontSize: 13, marginTop: 8, fontStyle: "italic" },
   photoRow: { flexDirection: "row", gap: 8, marginTop: 4 },
   photoButton: {
     flex: 1,

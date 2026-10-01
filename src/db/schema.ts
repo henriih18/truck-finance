@@ -135,4 +135,32 @@ export const MIGRATIONS: string[] = [
      key TEXT PRIMARY KEY,
      value TEXT
   );`,
+
+  // -----------------------------------------------------------------
+  //  Migraciones nuevas (alineadas con el esquema remoto corregido)
+  // -----------------------------------------------------------------
+
+  // 1) Tabla de categorías de gasto (gestionables por usuario)
+  `CREATE TABLE IF NOT EXISTS local_expense_categories (
+     _local_id TEXT PRIMARY KEY,
+     _server_id TEXT,
+     _sync_status TEXT NOT NULL DEFAULT 'pending',
+     _dirty INTEGER NOT NULL DEFAULT 1,
+     _deleted INTEGER NOT NULL DEFAULT 0,
+     _created_at TEXT NOT NULL,
+     _updated_at TEXT NOT NULL,
+     user_id TEXT NOT NULL,
+     code TEXT NOT NULL,
+     label TEXT NOT NULL,
+     is_trip_expense INTEGER NOT NULL DEFAULT 1
+  );`,
+
+  // 2) Índices para la nueva tabla
+  `CREATE INDEX IF NOT EXISTS idx_expense_categories_dirty ON local_expense_categories(_dirty);`,
+  `CREATE INDEX IF NOT EXISTS idx_expense_categories_server ON local_expense_categories(_server_id);`,
+
+  // 3) Agregar category_id a local_expenses (FK opcional a local_expense_categories._local_id)
+  //    SQLite no soporta ADD COLUMN IF NOT EXISTS; usar try/catch en el init.
+  //    Esta sentencia falla si la columna ya existe (es idempotente vía init.ts).
+  `ALTER TABLE local_expenses ADD COLUMN category_id TEXT;`,
 ];

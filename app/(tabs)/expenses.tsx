@@ -1,24 +1,39 @@
 import { View, Text, FlatList, Pressable, StyleSheet } from "react-native";
 import { Link } from "expo-router";
 import { useGeneralExpenses } from "../../src/hooks/useGeneralExpenses";
+import { useExpenseCategories } from "../../src/hooks/useExpenseCategories";
 import { SyncIndicator } from "../../src/ui/SyncIndicator";
+
+// Mapa de iconos por código (fallback para gastos viejos sin category_id)
+const CATEGORY_ICONS: Record<string, string> = {
+  // Generales
+  MANTENIMIENTO: "🔧",
+  ACEITE: "🛢️",
+  LLANTAS: "🛞",
+  REPARACION: "🛠️",
+  IMPUESTOS: "📄",
+  SEGUROS: "🛡️",
+  LAVADO: "🚿",
+  OTRO: "📦",
+  // De viaje (pueden aparecer aquí si el usuario los usó como generales)
+  COMBUSTIBLE: "⛽",
+  PEAJE: "🛣️",
+  DESCARGUE: "📦",
+  OTRO_VIAJE: "🔧",
+};
 
 export default function GeneralExpenses() {
   const expenses = useGeneralExpenses();
+  const { categories } = useExpenseCategories();
 
-  const getCategoryIcon = (code: string) => {
-    const icons: Record<string, string> = {
-      MANTENIMIENTO: "🔧",
-      ACEITE: "🛢️",
-      LLANTAS: "🛞",
-      REPARACION: "🛠️",
-      IMPUESTOS: "📄",
-      SEGUROS: "🛡️",
-      LAVADO: "🚿",
-      OTRO: "📦",
-    };
-    return icons[code] || "📦";
-  };
+  // Mapa code → label para resolver el display rápidamente
+  const labelByCode = new Map<string, string>();
+  for (const c of categories) {
+    labelByCode.set(c.code, c.label);
+  }
+
+  const getCategoryIcon = (code: string) => CATEGORY_ICONS[code] || "📦";
+  const getCategoryLabel = (code: string) => labelByCode.get(code) ?? code;
 
   return (
     <View style={s.container}>
@@ -49,7 +64,9 @@ export default function GeneralExpenses() {
                   {getCategoryIcon(item.category_code)}
                 </Text>
                 <View>
-                  <Text style={s.category}>{item.category_code}</Text>
+                  <Text style={s.category}>
+                    {getCategoryLabel(item.category_code)}
+                  </Text>
                   <Text style={s.description}>{item.description}</Text>
                 </View>
               </View>
