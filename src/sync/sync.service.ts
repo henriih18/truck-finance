@@ -223,6 +223,57 @@ export class SyncService {
           }
         }
 
+        // DIAGNÓSTICO RLS en trip_discounts: antes de hacer INSERT,
+        // verificar si el viaje padre realmente existe y pertenece al
+        // usuario en el servidor. Si no, saltar con mensaje claro en
+        // vez de esperar al error 42501.
+        if (
+          safeTable === "local_trip_discounts" &&
+          payload.trip_id &&
+          !row._deleted
+        ) {
+          const { data: tripOnServer, error: tripQryErr } = await this.supa
+            .from("trips")
+            .select("id, user_id, deleted_at")
+            .eq("id", payload.trip_id)
+            .maybeSingle();
+
+          if (tripQryErr) {
+            console.warn(
+              `[SYNC] No se pudo verificar viaje padre ${payload.trip_id} en servidor:`,
+              tripQryErr.message,
+            );
+          } else if (!tripOnServer) {
+            console.warn(
+              `[SYNC] Viaje padre ${payload.trip_id} NO existe en servidor ` +
+                `(local_id=${row.trip_id}, fila=${row._local_id}). ` +
+                `Saltando discount. Posible data inconsistency.`,
+            );
+            continue;
+          } else {
+            const uid = useAuthStore.getState().user?.id;
+            if (tripOnServer.user_id !== uid) {
+              console.warn(
+                `[SYNC] Viaje padre ${payload.trip_id} pertenece a ` +
+                  `user_id=${tripOnServer.user_id} (auth.uid=${uid}). ` +
+                  `Saltando discount.`,
+              );
+              continue;
+            }
+            if (tripOnServer.deleted_at) {
+              console.warn(
+                `[SYNC] Viaje padre ${payload.trip_id} está soft-deleted ` +
+                  `(${tripOnServer.deleted_at}). Saltando discount.`,
+              );
+              continue;
+            }
+            console.log(
+              `[SYNC] Viaje padre ${payload.trip_id} OK en servidor. ` +
+                `Procediendo con INSERT en trip_discounts.`,
+            );
+          }
+        }
+
         // Resolver truck_id local (_local_id) a server_id (UUID) en trips
         if (
           safeTable === "local_trips" &&
