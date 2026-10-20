@@ -1,16 +1,12 @@
 import { Tabs } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Text, StyleSheet } from "react-native";
+import { Text, StyleSheet, View } from "react-native";
 import { useTheme } from "../../src/theme/ThemeContext";
 
 export default function TabsLayout() {
   const { colors } = useTheme();
 
   return (
-    <SafeAreaView
-      style={[s.container, { backgroundColor: colors.background }]}
-      edges={["top"]}
-    >
+    <View style={[s.container, { backgroundColor: colors.background }]}>
       <Tabs
         screenOptions={{
           tabBarActiveTintColor: colors.tabActive,
@@ -74,7 +70,7 @@ export default function TabsLayout() {
           }}
         />
       </Tabs>
-    </SafeAreaView>
+    </View>
   );
 }
 

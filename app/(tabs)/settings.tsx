@@ -7,7 +7,6 @@ import {
   Pressable,
   ScrollView,
   Alert,
-  StyleSheet,
   ActivityIndicator,
 } from "react-native";
 import { useSettings, useUpdateSettings } from "../../src/hooks/useSettings";
@@ -15,13 +14,24 @@ import { useAuthStore } from "../../src/stores/auth.store";
 import { useRouter } from "expo-router";
 import { useTheme } from "../../src/theme/ThemeContext";
 import type { ThemeMode } from "../../src/theme/colors";
+import { SyncIndicator } from "../../src/ui/SyncIndicator";
+import {
+  Screen,
+  ScreenHeader,
+  Card,
+  SectionTitle,
+  PrimaryButton,
+  spacing,
+  typography,
+} from "../../src/ui/components";
 
 export default function SettingsScreen() {
+  const { colors } = useTheme();
   const { signOut, user } = useAuthStore();
   const router = useRouter();
   const settings = useSettings();
   const updateSettings = useUpdateSettings();
-  const { mode, setMode, colors } = useTheme();
+  const { mode, setMode } = useTheme();
 
   const [sourceRet, setSourceRet] = useState("");
   const [icaRet, setIcaRet] = useState("");
@@ -44,7 +54,6 @@ export default function SettingsScreen() {
   );
   const [saving, setSaving] = useState(false);
 
-  // ✅ CORREGIDO: Usar useEffect para cargar valores cuando settings cambie
   useEffect(() => {
     if (settings) {
       setSourceRet(String(settings.sourceRetPct));
@@ -66,7 +75,6 @@ export default function SettingsScreen() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // ✅ CORREGIDO: Enviar camelCase al hook
       await updateSettings({
         sourceRetPct: Number(sourceRet) || 1.0,
         icaRetPct: Number(icaRet) || 1.0,
@@ -106,394 +114,414 @@ export default function SettingsScreen() {
 
   if (!settings) {
     return (
-      <View style={[s.center, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={{ marginTop: 10, color: colors.textMuted }}>
-          Cargando configuración...
-        </Text>
-      </View>
+      <Screen>
+        <ScreenHeader title="Configuración" />
+        <View
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={{ marginTop: 10, color: colors.textMuted }}>
+            Cargando configuración...
+          </Text>
+        </View>
+      </Screen>
     );
   }
 
   return (
-    <ScrollView style={[s.container, { backgroundColor: colors.background }]}>
-      <Text style={[s.title, { color: colors.text }]}>Configuración</Text>
-
-      {/* Usuario */}
-      <Section title="USUARIO">
-        <Text style={[s.email, { color: colors.text }]}>
-          {user?.email || "No identificado"}
-        </Text>
-        <Pressable
-          style={[
-            s.truckBtn,
-            { backgroundColor: colors.background, borderColor: colors.border },
-          ]}
-          onPress={() => router.push("/trucks" as any)}
-        >
-          <Text style={s.truckBtnIcon}>🚛</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.truckBtnTitle, { color: colors.text }]}>
-              Mis Camiones
-            </Text>
-            <Text style={[s.truckBtnSub, { color: colors.textMuted }]}>
-              Gestiona placas, marcas y kilometraje
-            </Text>
-          </View>
-          <Text style={[s.truckBtnArrow, { color: colors.textMuted }]}>›</Text>
-        </Pressable>
-      </Section>
-
-      {/* Apariencia */}
-      <Section title="APARIENCIA">
-        <Text style={[s.label, { color: colors.textMuted }]}>Modo de tema</Text>
-        <View style={s.row}>
-          {(["light", "dark", "system"] as ThemeMode[]).map((m) => (
-            <Pressable
-              key={m}
-              style={[
-                s.choice,
-                { backgroundColor: colors.surfaceMuted },
-                mode === m && { backgroundColor: colors.primary },
-              ]}
-              onPress={() => setMode(m)}
-            >
-              <Text
-                style={[
-                  s.choiceText,
-                  { color: colors.textSecondary },
-                  mode === m && s.choiceTextActive,
-                ]}
-              >
-                {m === "light"
-                  ? "☀️ Claro"
-                  : m === "dark"
-                    ? "🌙 Oscuro"
-                    : "🔄 Sistema"}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      </Section>
-
-      {/* Retenciones */}
-      <Section title="RETENCIONES DEL FLETE (%)">
-        <Field
-          label="Retención en la fuente (%)"
-          value={sourceRet}
-          onChangeText={setSourceRet}
-          keyboardType="numeric"
-        />
-        <Field
-          label="Retención ICA (%)"
-          value={icaRet}
-          onChangeText={setIcaRet}
-          keyboardType="numeric"
-        />
-      </Section>
-
-      {/* Amarre */}
-      <Section title="AMARRE (valor por defecto para nuevos viajes)">
-        <Text style={s.label}>¿Cómo se cobra el amarre?</Text>
-        <View style={s.row}>
-          <Pressable
-            style={[
-              s.choice,
-              { backgroundColor: colors.surfaceMuted }, // fondo inactivo
-              tieMode === "deduct" && { backgroundColor: colors.primary }, // fondo activo
-            ]}
-            onPress={() => setTieMode("deduct")}
+    <Screen>
+      <ScreenHeader
+        title="Configuración"
+        subtitle="Personaliza tu app y reglas financieras"
+        right={<SyncIndicator />}
+      />
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+      >
+        {/* Usuario */}
+        <SectionTitle>Usuario</SectionTitle>
+        <Card>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 12,
+              marginBottom: 12,
+            }}
           >
-            <Text
-              style={[
-                s.choiceText,
-                { color: colors.textSecondary }, // texto inactivo
-                tieMode === "deduct" && s.choiceTextActive, // texto activo
-              ]}
+            <View
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 999,
+                backgroundColor: colors.primaryMuted,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
             >
-              Descuento fijo
-            </Text>
-          </Pressable>
+              <Text style={{ fontSize: 20 }}>👤</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  color: colors.textMuted,
+                  fontSize: 11,
+                  fontWeight: "700",
+                  textTransform: "uppercase",
+                }}
+              >
+                Conectado como
+              </Text>
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: 15,
+                  fontWeight: "700",
+                  marginTop: 2,
+                }}
+                numberOfLines={1}
+              >
+                {user?.email || "No identificado"}
+              </Text>
+            </View>
+          </View>
           <Pressable
-            style={[
-              s.choice,
-              { backgroundColor: colors.surfaceMuted },
-              tieMode === "charge_per_moto" && {
-                backgroundColor: colors.primary,
+            style={({ pressed }) => [
+              {
+                flexDirection: "row",
+                alignItems: "center",
+                borderWidth: 1,
+                borderColor: colors.border,
+                borderRadius: 12,
+                padding: 12,
+                gap: 12,
+                opacity: pressed ? 0.85 : 1,
               },
             ]}
-            onPress={() => setTieMode("charge_per_moto")}
+            onPress={() => router.push("/trucks" as any)}
           >
-            <Text
-              style={[
-                s.choiceText,
-                { color: colors.textSecondary },
-                tieMode === "charge_per_moto" && s.choiceTextActive,
-              ]}
-            >
-              Por moto
-            </Text>
-          </Pressable>
-        </View>
-
-        {tieMode === "deduct" ? (
-          <Field
-            label="Valor fijo del amarre ($)"
-            value={tieFixed}
-            onChangeText={setTieFixed}
-            keyboardType="numeric"
-          />
-        ) : (
-          <Field
-            label="Valor por moto ($)"
-            value={tiePerMoto}
-            onChangeText={setTiePerMoto}
-            keyboardType="numeric"
-          />
-        )}
-      </Section>
-
-      {/* Anticipo */}
-      <Section title="ANTICIPO (valor por defecto para nuevos viajes)">
-        <Field
-          label="Porcentaje del anticipo (%)"
-          value={advancePct}
-          onChangeText={setAdvancePct}
-          keyboardType="numeric"
-        />
-      </Section>
-
-      {/* Descargue */}
-      <Section title="DESCARGUE (valor por defecto para nuevos viajes)">
-        <Field
-          label="Valor por moto ($)"
-          value={unloadPerMoto}
-          onChangeText={setUnloadPerMoto}
-          keyboardType="numeric"
-        />
-      </Section>
-
-      {/* Concepto 10% */}
-      <Section title="CONCEPTO DEL 10%">
-        <View style={s.switchRow}>
-          <Text style={[s.label, { color: colors.textMuted }]}>
-            Activar concepto del 10%
-          </Text>
-          <Switch
-            value={tenEnabled}
-            onValueChange={setTenEnabled}
-            trackColor={{ false: colors.surfaceMuted, true: colors.primary }}
-          />
-        </View>
-
-        {tenEnabled && (
-          <>
-            <Field
-              label="Nombre del concepto"
-              value={tenLabel}
-              onChangeText={setTenLabel}
-            />
-            <Field
-              label="Porcentaje (%)"
-              value={tenValue}
-              onChangeText={setTenValue}
-              keyboardType="numeric"
-            />
-
-            {/* Base de cálculo */}
-            <Text style={[s.label, { color: colors.textMuted }]}>
-              Base de cálculo
-            </Text>
-            <View style={s.row}>
-              <Pressable
-                style={[
-                  s.choice,
-                  { backgroundColor: colors.surfaceMuted },
-                  tenBase === "gross_freight" && {
-                    backgroundColor: colors.primary,
-                  },
-                ]}
-                onPress={() => setTenBase("gross_freight")}
+            <Text style={{ fontSize: 22 }}>🚛</Text>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: 15,
+                  fontWeight: "700",
+                }}
               >
-                <Text
-                  style={[
-                    s.choiceText,
-                    { color: colors.textSecondary },
-                    tenBase === "gross_freight" && s.choiceTextActive,
-                  ]}
-                >
-                  Flete total
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  s.choice,
-                  { backgroundColor: colors.surfaceMuted },
-                  tenBase === "net_freight" && {
-                    backgroundColor: colors.primary,
-                  },
-                ]}
-                onPress={() => setTenBase("net_freight")}
+                Mis Camiones
+              </Text>
+              <Text
+                style={{
+                  color: colors.textMuted,
+                  fontSize: 12,
+                  marginTop: 2,
+                }}
               >
-                <Text
-                  style={[
-                    s.choiceText,
-                    { color: colors.textSecondary },
-                    tenBase === "net_freight" && s.choiceTextActive,
-                  ]}
-                >
-                  Flete neto
-                </Text>
-              </Pressable>
-            </View>
-
-            {/* Tipo: descuento o gasto */}
-            <Text style={[s.label, { color: colors.textMuted }]}>Tipo</Text>
-            <View style={s.row}>
-              <Pressable
-                style={[
-                  s.choice,
-                  { backgroundColor: colors.surfaceMuted },
-                  tenKind === "discount" && { backgroundColor: colors.primary },
-                ]}
-                onPress={() => setTenKind("discount")}
-              >
-                <Text
-                  style={[
-                    s.choiceText,
-                    { color: colors.textSecondary },
-                    tenKind === "discount" && s.choiceTextActive,
-                  ]}
-                >
-                  Descuento
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  s.choice,
-                  { backgroundColor: colors.surfaceMuted },
-                  tenKind === "expense" && { backgroundColor: colors.primary },
-                ]}
-                onPress={() => setTenKind("expense")}
-              >
-                <Text
-                  style={[
-                    s.choiceText,
-                    { color: colors.textSecondary },
-                    tenKind === "expense" && s.choiceTextActive,
-                  ]}
-                >
-                  Gasto del viaje
-                </Text>
-              </Pressable>
-            </View>
-
-            {/* Afecta a: flete o anticipo */}
-            <Text style={[s.label, { color: colors.textMuted }]}>Afecta a</Text>
-            <View style={s.row}>
-              <Pressable
-                style={[
-                  s.choice,
-                  { backgroundColor: colors.surfaceMuted },
-                  tenAffects === "freight" && {
-                    backgroundColor: colors.primary,
-                  },
-                ]}
-                onPress={() => setTenAffects("freight")}
-              >
-                <Text
-                  style={[
-                    s.choiceText,
-                    { color: colors.textSecondary },
-                    tenAffects === "freight" && s.choiceTextActive,
-                  ]}
-                >
-                  Flete
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  s.choice,
-                  { backgroundColor: colors.surfaceMuted },
-                  tenAffects === "advance" && {
-                    backgroundColor: colors.primary,
-                  },
-                ]}
-                onPress={() => setTenAffects("advance")}
-              >
-                <Text
-                  style={[
-                    s.choiceText,
-                    { color: colors.textSecondary },
-                    tenAffects === "advance" && s.choiceTextActive,
-                  ]}
-                >
-                  Anticipo
-                </Text>
-              </Pressable>
-            </View>
-
-            {/* Resumen de la configuración */}
-            <View
-              style={[s.summaryBox, { backgroundColor: colors.primaryMuted }]}
-            >
-              <Text style={[s.summaryText, { color: colors.primary }]}>
-                {tenKind === "discount"
-                  ? tenAffects === "freight"
-                    ? "Se descuenta del flete → reduce el flete neto"
-                    : "Se descuenta del anticipo → reduce el anticipo recibido"
-                  : "Se registra como gasto del viaje (pagado con el anticipo)"}
+                Gestiona placas, marcas y kilometraje
               </Text>
             </View>
-          </>
-        )}
-      </Section>
+            <Text style={{ color: colors.textMuted, fontSize: 22 }}>›</Text>
+          </Pressable>
+        </Card>
 
-      {/* Botón guardar */}
-      <Pressable
-        style={[
-          s.button,
-          { backgroundColor: saving ? colors.primaryMuted : colors.primary },
-        ]}
-        onPress={handleSave}
-        disabled={saving}
-      >
-        <Text style={[s.buttonText, { color: colors.textOnPrimary }]}>
-          {saving ? "Guardando..." : "GUARDAR CONFIGURACIÓN"}
-        </Text>
-      </Pressable>
+        {/* Apariencia */}
+        <SectionTitle>Apariencia</SectionTitle>
+        <Card>
+          <Text
+            style={{
+              fontSize: 11,
+              color: colors.textMuted,
+              fontWeight: "700",
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+            }}
+          >
+            Modo de tema
+          </Text>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+            {(["light", "dark", "system"] as ThemeMode[]).map((m) => {
+              const active = mode === m;
+              return (
+                <Pressable
+                  key={m}
+                  style={({ pressed }) => [
+                    {
+                      flex: 1,
+                      paddingVertical: 12,
+                      borderRadius: 10,
+                      alignItems: "center",
+                      backgroundColor: active
+                        ? colors.primary
+                        : colors.surfaceMuted,
+                      borderWidth: 1,
+                      borderColor: active ? colors.primary : colors.border,
+                      opacity: pressed ? 0.85 : 1,
+                    },
+                  ]}
+                  onPress={() => setMode(m)}
+                >
+                  <Text
+                    style={{
+                      color: active
+                        ? colors.textOnPrimary
+                        : colors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: "700",
+                      textAlign: "center",
+                    }}
+                  >
+                    {m === "light"
+                      ? "☀️ Claro"
+                      : m === "dark"
+                        ? "🌙 Oscuro"
+                        : "🔄 Sistema"}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Card>
 
-      {/* Logout */}
-      <Pressable
-        style={[s.logoutButton, { backgroundColor: colors.danger }]}
-        onPress={handleLogout}
-      >
-        <Text style={[s.logoutText, { color: colors.textOnPrimary }]}>
-          Cerrar Sesión
-        </Text>
-      </Pressable>
+        {/* Retenciones */}
+        <SectionTitle>Retenciones del flete (%)</SectionTitle>
+        <Card>
+          <Field
+            label="Retención en la fuente (%)"
+            value={sourceRet}
+            onChangeText={setSourceRet}
+            keyboardType="numeric"
+          />
+          <Field
+            label="Retención ICA (%)"
+            value={icaRet}
+            onChangeText={setIcaRet}
+            keyboardType="numeric"
+          />
+        </Card>
 
-      <View style={{ height: 40 }} />
-    </ScrollView>
+        {/* Amarre */}
+        <SectionTitle>Amarre · default para nuevos viajes</SectionTitle>
+        <Card>
+          <Text style={fieldLabelStyle(colors)}>¿Cómo se cobra el amarre?</Text>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+            {[
+              { id: "deduct" as const, label: "Descuento fijo" },
+              { id: "charge_per_moto" as const, label: "Por moto" },
+            ].map((opt) => {
+              const active = tieMode === opt.id;
+              return (
+                <Pressable
+                  key={opt.id}
+                  style={({ pressed }) => [
+                    {
+                      flex: 1,
+                      paddingVertical: 12,
+                      borderRadius: 10,
+                      alignItems: "center",
+                      backgroundColor: active
+                        ? colors.primary
+                        : colors.surfaceMuted,
+                      borderWidth: 1,
+                      borderColor: active ? colors.primary : colors.border,
+                      opacity: pressed ? 0.85 : 1,
+                    },
+                  ]}
+                  onPress={() => setTieMode(opt.id)}
+                >
+                  <Text
+                    style={{
+                      color: active
+                        ? colors.textOnPrimary
+                        : colors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: "700",
+                      textAlign: "center",
+                    }}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {tieMode === "deduct" ? (
+            <Field
+              label="Valor fijo del amarre ($)"
+              value={tieFixed}
+              onChangeText={setTieFixed}
+              keyboardType="numeric"
+            />
+          ) : (
+            <Field
+              label="Valor por moto ($)"
+              value={tiePerMoto}
+              onChangeText={setTiePerMoto}
+              keyboardType="numeric"
+            />
+          )}
+        </Card>
+
+        {/* Anticipo */}
+        <SectionTitle>Anticipo · default para nuevos viajes</SectionTitle>
+        <Card>
+          <Field
+            label="Porcentaje del anticipo (%)"
+            value={advancePct}
+            onChangeText={setAdvancePct}
+            keyboardType="numeric"
+          />
+        </Card>
+
+        {/* Descargue */}
+        <SectionTitle>Descargue · default para nuevos viajes</SectionTitle>
+        <Card>
+          <Field
+            label="Valor por moto ($)"
+            value={unloadPerMoto}
+            onChangeText={setUnloadPerMoto}
+            keyboardType="numeric"
+          />
+        </Card>
+
+        {/* Concepto 10% */}
+        <SectionTitle>Concepto del 10%</SectionTitle>
+        <Card>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              paddingVertical: 4,
+            }}
+          >
+            <Text style={fieldLabelStyle(colors)}>
+              Activar concepto del 10%
+            </Text>
+            <Switch
+              value={tenEnabled}
+              onValueChange={setTenEnabled}
+              trackColor={{
+                false: colors.surfaceMuted,
+                true: colors.primary,
+              }}
+            />
+          </View>
+
+          {tenEnabled && (
+            <>
+              <Field
+                label="Nombre del concepto"
+                value={tenLabel}
+                onChangeText={setTenLabel}
+              />
+              <Field
+                label="Porcentaje (%)"
+                value={tenValue}
+                onChangeText={setTenValue}
+                keyboardType="numeric"
+              />
+
+              <Text style={fieldLabelStyle(colors, 12)}>Base de cálculo</Text>
+              <ChoiceRow
+                options={[
+                  { id: "gross_freight" as const, label: "Flete total" },
+                  { id: "net_freight" as const, label: "Flete neto" },
+                ]}
+                value={tenBase}
+                onChange={setTenBase}
+              />
+
+              <Text style={fieldLabelStyle(colors, 12)}>Tipo</Text>
+              <ChoiceRow
+                options={[
+                  { id: "discount" as const, label: "Descuento" },
+                  { id: "expense" as const, label: "Gasto del viaje" },
+                ]}
+                value={tenKind}
+                onChange={setTenKind}
+              />
+
+              <Text style={fieldLabelStyle(colors, 12)}>Afecta a</Text>
+              <ChoiceRow
+                options={[
+                  { id: "freight" as const, label: "Flete" },
+                  { id: "advance" as const, label: "Anticipo" },
+                ]}
+                value={tenAffects}
+                onChange={setTenAffects}
+              />
+
+              <View
+                style={{
+                  backgroundColor: colors.primaryMuted,
+                  borderRadius: 8,
+                  padding: 10,
+                  marginTop: 12,
+                }}
+              >
+                <Text
+                  style={{
+                    color: colors.primary,
+                    fontSize: 12,
+                    fontWeight: "700",
+                  }}
+                >
+                  {tenKind === "discount"
+                    ? tenAffects === "freight"
+                      ? "Se descuenta del flete → reduce el flete neto"
+                      : "Se descuenta del anticipo → reduce el anticipo recibido"
+                    : "Se registra como gasto del viaje (pagado con el anticipo)"}
+                </Text>
+              </View>
+            </>
+          )}
+        </Card>
+
+        <PrimaryButton
+          label={saving ? "GUARDANDO..." : "GUARDAR CONFIGURACIÓN"}
+          icon="💾"
+          onPress={handleSave}
+          loading={saving}
+        />
+
+        <Pressable
+          style={({ pressed }) => [
+            {
+              backgroundColor: colors.danger,
+              borderRadius: 16,
+              paddingVertical: 16,
+              alignItems: "center",
+              marginBottom: 16,
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+          onPress={handleLogout}
+        >
+          <Text
+            style={{
+              color: "white",
+              fontSize: 16,
+              fontWeight: "800",
+            }}
+          >
+            🚪 CERRAR SESIÓN
+          </Text>
+        </Pressable>
+      </ScrollView>
+    </Screen>
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  const { colors } = useTheme();
-  return (
-    <View style={[s.section, { backgroundColor: colors.surface }]}>
-      <Text style={[s.sectionTitle, { color: colors.textMuted }]}>{title}</Text>
-      <View style={{ marginTop: 8 }}>{children}</View>
-    </View>
-  );
-}
-
+/* ============================================================
+ *  Field: label + input
+ * ============================================================ */
 function Field({
   label,
   value,
@@ -508,16 +536,19 @@ function Field({
   const { colors } = useTheme();
   return (
     <View style={{ marginTop: 8 }}>
-      <Text style={[s.label, { color: colors.textMuted }]}>{label}</Text>
+      <Text style={fieldLabelStyle(colors)}>{label}</Text>
       <TextInput
-        style={[
-          s.input,
-          {
-            backgroundColor: colors.background,
-            borderColor: colors.border,
-            color: colors.text,
-          },
-        ]}
+        style={{
+          backgroundColor: colors.surfaceMuted,
+          borderRadius: 10,
+          paddingHorizontal: 14,
+          paddingVertical: 12,
+          marginTop: 4,
+          fontSize: 16,
+          color: colors.text,
+          borderWidth: 1,
+          borderColor: colors.border,
+        }}
         value={value}
         onChangeText={onChangeText}
         keyboardType={keyboardType}
@@ -527,73 +558,64 @@ function Field({
   );
 }
 
-const s = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  title: { fontSize: 24, fontWeight: "bold", marginBottom: 16 },
-  section: { borderRadius: 12, padding: 16, marginBottom: 16 },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: "bold",
+function ChoiceRow<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { id: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+      {options.map((opt) => {
+        const active = value === opt.id;
+        return (
+          <Pressable
+            key={opt.id}
+            style={({ pressed }) => [
+              {
+                flex: 1,
+                paddingVertical: 10,
+                borderRadius: 10,
+                alignItems: "center",
+                backgroundColor: active ? colors.primary : colors.surfaceMuted,
+                borderWidth: 1,
+                borderColor: active ? colors.primary : colors.border,
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+            onPress={() => onChange(opt.id)}
+          >
+            <Text
+              style={{
+                color: active ? colors.textOnPrimary : colors.textSecondary,
+                fontSize: 12,
+                fontWeight: "700",
+                textAlign: "center",
+              }}
+            >
+              {opt.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function fieldLabelStyle(
+  colors: ReturnType<typeof useTheme>["colors"],
+  marginTop = 8,
+) {
+  return {
+    fontSize: 11 as const,
+    color: colors.textMuted,
+    fontWeight: "700" as const,
     letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  label: { fontSize: 11, fontWeight: "600", marginTop: 8 },
-  input: {
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginTop: 4,
-    fontSize: 16,
-    borderWidth: 1,
-  },
-  row: { flexDirection: "row", gap: 8, marginTop: 8 },
-  choice: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  choiceText: { fontWeight: "600" },
-  choiceTextActive: { color: "white", fontWeight: "bold" },
-  switchRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 8,
-  },
-  summaryBox: {
-    borderRadius: 8,
-    padding: 10,
-    marginTop: 12,
-  },
-  summaryText: { fontSize: 12, fontWeight: "600" },
-  email: { fontSize: 14, marginTop: 4 },
-  truckBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 12,
-    gap: 12,
-  },
-  truckBtnIcon: { fontSize: 24 },
-  truckBtnTitle: { fontSize: 15, fontWeight: "600" },
-  truckBtnSub: { fontSize: 12, marginTop: 2 },
-  truckBtnArrow: { fontSize: 22 },
-  button: {
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 8,
-  },
-  buttonText: { fontSize: 16, fontWeight: "bold" },
-  logoutButton: {
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 16,
-  },
-  logoutText: { fontSize: 16, fontWeight: "bold" },
-});
+    textTransform: "uppercase" as const,
+    marginTop,
+  };
+}

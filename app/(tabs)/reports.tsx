@@ -4,7 +4,6 @@ import {
   Text,
   ScrollView,
   Pressable,
-  StyleSheet,
   Alert,
   Share,
   Modal,
@@ -15,11 +14,24 @@ import { useGeneralExpenses } from "../../src/hooks/useGeneralExpenses";
 import { getDatabase } from "../../src/db/connection";
 import { ExpensesRepository } from "../../src/db/repositories/expenses.repo";
 import { PaymentsRepository } from "../../src/db/repositories/payments.repo";
+import { useTheme } from "../../src/theme/ThemeContext";
 import { SyncIndicator } from "../../src/ui/SyncIndicator";
+import {
+  Screen,
+  ScreenHeader,
+  Card,
+  SectionTitle,
+  EmptyState,
+  StatusPill,
+  RouteArrow,
+  spacing,
+  typography,
+} from "../../src/ui/components";
 
 type Period = "today" | "week" | "month" | "year" | "all" | "custom";
 
 export default function Reports() {
+  const { colors } = useTheme();
   const trips = useTrips();
   const generalExpenses = useGeneralExpenses();
   const [period, setPeriod] = useState<Period>("month");
@@ -31,7 +43,6 @@ export default function Reports() {
 
   const today = new Date().toISOString().slice(0, 10);
 
-  // Filtrar por período
   const { startDate, endDate } = useMemo(() => {
     const now = new Date();
     const startOfToday = new Date(
@@ -40,11 +51,7 @@ export default function Reports() {
       now.getDate(),
     ).getTime();
     const startOfWeek = startOfToday - now.getDay() * 24 * 60 * 60 * 1000;
-    const startOfMonth = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      1,
-    ).getTime();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     const startOfYear = new Date(now.getFullYear(), 0, 1).getTime();
     const endOfToday = startOfToday + 24 * 60 * 60 * 1000;
 
@@ -57,7 +64,9 @@ export default function Reports() {
     if (period === "year")
       return { startDate: startOfYear, endDate: endOfToday };
     if (period === "custom") {
-      const s = customStart ? new Date(customStart + "T00:00:00").getTime() : 0;
+      const s = customStart
+        ? new Date(customStart + "T00:00:00").getTime()
+        : 0;
       const e = customEnd
         ? new Date(customEnd + "T23:59:59").getTime()
         : Date.now();
@@ -80,14 +89,12 @@ export default function Reports() {
     });
   }, [generalExpenses, startDate, endDate]);
 
-  // Cargar gastos reales de los viajes filtrados + pagos recibidos
   useEffect(() => {
     const load = async () => {
       try {
         const db = await getDatabase();
         const expRepo = new ExpensesRepository(db);
         const payRepo = new PaymentsRepository(db);
-
         let exp = 0;
         let received = 0;
         for (const t of filteredTrips) {
@@ -107,7 +114,6 @@ export default function Reports() {
     }
   }, [filteredTrips]);
 
-  // Totales
   const totals = useMemo(() => {
     const totalGross = filteredTrips.reduce((s, t) => s + t.gross_freight, 0);
     const totalNet = filteredTrips.reduce((s, t) => s + t.net_freight, 0);
@@ -142,14 +148,10 @@ export default function Reports() {
 
   const formatMoney = (n: number) => `$${n.toLocaleString("es-CO")}`;
 
-  // ===== Exportación a CSV (vía Share.share) =====
   const handleExportCSV = async () => {
     try {
       if (filteredTrips.length === 0) {
-        Alert.alert(
-          "Sin datos",
-          "No hay viajes para exportar en este período.",
-        );
+        Alert.alert("Sin datos", "No hay viajes para exportar en este período.");
         return;
       }
 
@@ -198,7 +200,6 @@ export default function Reports() {
         `Ganancia,${totals.estimatedProfit}`,
       ].join("\n");
 
-      // Usar Share.share (disponible en iOS/Android sin dependencias extra)
       await Share.share({
         message: csv,
         title: `Reporte_CSV_${period}_${today}`,
@@ -209,7 +210,6 @@ export default function Reports() {
     }
   };
 
-  // ===== Exportación a texto formateado (estilo "PDF" — formato legible) =====
   const handleExportSummary = async () => {
     try {
       if (filteredTrips.length === 0) {
@@ -295,239 +295,558 @@ export default function Reports() {
   };
 
   return (
-    <ScrollView style={s.container}>
-      <View style={s.header}>
-        <Text style={s.title}>Reportes</Text>
-        <SyncIndicator />
-      </View>
+    <Screen>
+      <ScreenHeader
+        title="Reportes"
+        subtitle="Análisis financiero por período"
+        right={<SyncIndicator />}
+      />
 
-      {/* Selector de Período */}
       <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={s.periodScroll}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 40 }}
       >
-        <PeriodButton
-          label="Hoy"
-          active={period === "today"}
-          onPress={() => setPeriod("today")}
-        />
-        <PeriodButton
-          label="Semana"
-          active={period === "week"}
-          onPress={() => setPeriod("week")}
-        />
-        <PeriodButton
-          label="Mes"
-          active={period === "month"}
-          onPress={() => setPeriod("month")}
-        />
-        <PeriodButton
-          label="Año"
-          active={period === "year"}
-          onPress={() => setPeriod("year")}
-        />
-        <PeriodButton
-          label="Todo"
-          active={period === "all"}
-          onPress={() => setPeriod("all")}
-        />
-        <PeriodButton
-          label="📅 Personalizado"
-          active={period === "custom"}
-          onPress={openCustom}
-        />
-      </ScrollView>
-
-      {period === "custom" && customStart && customEnd && (
-        <Text style={s.customRange}>
-          📅 {customStart} → {customEnd}
-        </Text>
-      )}
-
-      {/* Tarjetas de Resumen */}
-      <View style={s.summaryGrid}>
-        <SummaryCard
-          label="Viajes"
-          value={String(filteredTrips.length)}
-          color="#6b7280"
-        />
-        <SummaryCard
-          label="Flete Total"
-          value={formatMoney(totals.totalGross)}
-          color="#0ea5e9"
-        />
-        <SummaryCard
-          label="Flete Neto"
-          value={formatMoney(totals.totalNet)}
-          color="#059669"
-        />
-        <SummaryCard
-          label="Anticipos"
-          value={formatMoney(totals.totalAdvance)}
-          color="#0ea5e9"
-        />
-        <SummaryCard
-          label="Gastos Viaje"
-          value={formatMoney(totals.tripExpensesTotal)}
-          color="#dc2626"
-        />
-        <SummaryCard
-          label="Gastos Generales"
-          value={formatMoney(totals.generalExpensesTotal)}
-          color="#dc2626"
-        />
-        <SummaryCard
-          label="Gastos Totales"
-          value={formatMoney(totals.totalExpenses)}
-          color="#dc2626"
-        />
-        <SummaryCard
-          label="Recibido"
-          value={formatMoney(totals.totalReceived)}
-          color="#059669"
-        />
-        <SummaryCard
-          label="Por Cobrar"
-          value={formatMoney(totals.totalBalancePending)}
-          color="#d97706"
-        />
-        <SummaryCard
-          label="Cumpl. Pagados"
-          value={formatMoney(totals.totalBalancePaid)}
-          color="#059669"
-        />
-        <SummaryCard
-          label="Ganancia"
-          value={formatMoney(totals.estimatedProfit)}
-          color={totals.estimatedProfit >= 0 ? "#059669" : "#dc2626"}
-        />
-      </View>
-
-      {/* Botones de Exportación */}
-      <View style={s.exportRow}>
-        <Pressable
-          style={[s.exportButton, { flex: 1 }]}
-          onPress={handleExportCSV}
+        {/* Selector de período */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ padding: 16 }}
         >
-          <Text style={s.exportButtonText}>📊 CSV</Text>
-        </Pressable>
-        <Pressable
-          style={[s.exportButton, { flex: 1, backgroundColor: "#0ea5e9" }]}
-          onPress={handleExportSummary}
-        >
-          <Text style={s.exportButtonText}>📄 Resumen</Text>
-        </Pressable>
-      </View>
-
-      {/* Lista de Viajes del Período */}
-      <View style={s.listHeader}>
-        <Text style={s.listTitle}>
-          Viajes ({filteredTrips.length}) · Gastos generales (
-          {filteredExpenses.length})
-        </Text>
-      </View>
-
-      {filteredTrips.length === 0 ? (
-        <View style={s.emptyState}>
-          <Text style={{ fontSize: 40, marginBottom: 10 }}>📊</Text>
-          <Text style={s.emptyText}>Sin viajes en este período</Text>
-        </View>
-      ) : (
-        filteredTrips.map((t) => (
-          <View key={t._local_id} style={s.tripItem}>
-            <View style={s.tripHeader}>
-              <Text style={s.tripDate}>{t.date}</Text>
+          {[
+            { id: "today" as const, label: "Hoy" },
+            { id: "week" as const, label: "Semana" },
+            { id: "month" as const, label: "Mes" },
+            { id: "year" as const, label: "Año" },
+            { id: "all" as const, label: "Todo" },
+          ].map((p) => (
+            <Pressable
+              key={p.id}
+              style={({ pressed }) => [
+                {
+                  backgroundColor:
+                    period === p.id ? colors.primary : colors.surfaceMuted,
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderRadius: 999,
+                  marginRight: 8,
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
+              onPress={() => setPeriod(p.id)}
+            >
               <Text
-                style={
-                  t.balance_status === "paid" ? s.statusPaid : s.statusPending
-                }
+                style={{
+                  color:
+                    period === p.id
+                      ? colors.textOnPrimary
+                      : colors.textSecondary,
+                  fontWeight: "700",
+                  fontSize: 13,
+                }}
               >
-                {t.balance_status === "paid" ? "🟢 Pagado" : "🔴 Pendiente"}
+                {p.label}
               </Text>
-            </View>
-            <Text style={s.tripClient}>{t.client}</Text>
-            <Text style={s.tripRoute}>
-              {t.origin} → {t.destination}
+            </Pressable>
+          ))}
+          <Pressable
+            style={({ pressed }) => [
+              {
+                backgroundColor:
+                  period === "custom" ? colors.primary : colors.surfaceMuted,
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                borderRadius: 999,
+                marginRight: 8,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4,
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+            onPress={openCustom}
+          >
+            <Text
+              style={{
+                color:
+                  period === "custom"
+                    ? colors.textOnPrimary
+                    : colors.textSecondary,
+                fontWeight: "700",
+                fontSize: 13,
+              }}
+            >
+              📅 Personalizado
             </Text>
-            <Text style={s.tripMoto}>🛵 {t.moto_qty} motos</Text>
-            <View style={s.tripFooter}>
-              <Text style={s.tripNet}>Neto: {formatMoney(t.net_freight)}</Text>
-              <Text style={s.tripBalance}>
-                Cumplido: {formatMoney(t.balance)}
-              </Text>
-            </View>
-          </View>
-        ))
-      )}
+          </Pressable>
+        </ScrollView>
 
-      <View style={{ height: 40 }} />
+        {period === "custom" && customStart && customEnd && (
+          <Text
+            style={{
+              paddingHorizontal: 16,
+              paddingBottom: 8,
+              fontSize: 13,
+              color: colors.primary,
+              fontWeight: "700",
+            }}
+          >
+            📅 {customStart} → {customEnd}
+          </Text>
+        )}
+
+        {/* HERO: Ganancia */}
+        <View style={{ paddingHorizontal: 16 }}>
+          <View
+            style={{
+              backgroundColor:
+                totals.estimatedProfit >= 0 ? colors.primary : colors.danger,
+              borderRadius: 20,
+              padding: 24,
+            }}
+          >
+            <Text
+              style={{
+                color: "rgba(255,255,255,0.85)",
+                fontSize: 12,
+                fontWeight: "700",
+                letterSpacing: 1,
+                textTransform: "uppercase",
+              }}
+            >
+              📈 Ganancia del período
+            </Text>
+            <Text
+              style={{
+                color: "white",
+                fontSize: 36,
+                fontWeight: "900",
+                marginTop: 6,
+                fontVariant: ["tabular-nums"],
+              }}
+              numberOfLines={1}
+            >
+              ${totals.estimatedProfit.toLocaleString("es-CO")}
+            </Text>
+            <Text
+              style={{
+                color: "rgba(255,255,255,0.9)",
+                fontSize: 13,
+                marginTop: 6,
+              }}
+            >
+              {filteredTrips.length} viaje(s) en el período
+            </Text>
+          </View>
+        </View>
+
+        {/* Resumen */}
+        <SectionTitle>Resumen financiero</SectionTitle>
+        <View
+          style={{
+            paddingHorizontal: 16,
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: 8,
+          }}
+        >
+          <StatCard label="Viajes" value={String(filteredTrips.length)} icon="🚛" />
+          <StatCard
+            label="Flete total"
+            value={formatMoney(totals.totalGross)}
+            icon="💵"
+            variant="info"
+          />
+          <StatCard
+            label="Flete neto"
+            value={formatMoney(totals.totalNet)}
+            icon="✂️"
+            variant="success"
+          />
+          <StatCard
+            label="Anticipos"
+            value={formatMoney(totals.totalAdvance)}
+            icon="📤"
+            variant="info"
+          />
+          <StatCard
+            label="Gastos viaje"
+            value={formatMoney(totals.tripExpensesTotal)}
+            icon="🧾"
+            variant="danger"
+          />
+          <StatCard
+            label="Gastos generales"
+            value={formatMoney(totals.generalExpensesTotal)}
+            icon="🔧"
+            variant="danger"
+          />
+          <StatCard
+            label="Recibido"
+            value={formatMoney(totals.totalReceived)}
+            icon="📥"
+            variant="success"
+          />
+          <StatCard
+            label="Por cobrar"
+            value={formatMoney(totals.totalBalancePending)}
+            icon="💰"
+            variant="warning"
+          />
+        </View>
+
+        {/* Botones de exportación */}
+        <SectionTitle>Exportar</SectionTitle>
+        <View style={{ paddingHorizontal: 16, flexDirection: "row", gap: 10 }}>
+          <Pressable
+            style={({ pressed }) => [
+              {
+                flex: 1,
+                backgroundColor: colors.primary,
+                paddingVertical: 14,
+                borderRadius: 12,
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: 6,
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+            onPress={handleExportCSV}
+          >
+            <Text style={{ color: colors.textOnPrimary, fontWeight: "800", fontSize: 14 }}>
+              📊 CSV
+            </Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              {
+                flex: 1,
+                backgroundColor: colors.info,
+                paddingVertical: 14,
+                borderRadius: 12,
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: 6,
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+            onPress={handleExportSummary}
+          >
+            <Text style={{ color: "white", fontWeight: "800", fontSize: 14 }}>
+              📄 Resumen
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* Lista de viajes */}
+        <SectionTitle>
+          Viajes del período ({filteredTrips.length})
+        </SectionTitle>
+        <View style={{ paddingHorizontal: 16 }}>
+          {filteredTrips.length === 0 ? (
+            <EmptyState
+              icon="📊"
+              title="Sin viajes en este período"
+              subtitle="Cambia el período o registra un nuevo viaje."
+            />
+          ) : (
+            filteredTrips.map((t) => (
+              <Card key={t._local_id} style={{ marginBottom: 12 }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 8,
+                  }}
+                >
+                  <View
+                    style={{
+                      backgroundColor: colors.primaryMuted,
+                      borderRadius: 6,
+                      paddingHorizontal: 8,
+                      paddingVertical: 2,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: colors.primary,
+                        fontSize: 11,
+                        fontWeight: "800",
+                        letterSpacing: 1,
+                      }}
+                    >
+                      #{t.trip_number}
+                    </Text>
+                  </View>
+                  <StatusPill
+                    variant={t.balance_status === "paid" ? "success" : "warning"}
+                  >
+                    {t.balance_status === "paid" ? "Pagado" : "Pendiente"}
+                  </StatusPill>
+                </View>
+
+                <RouteArrow origin={t.origin} destination={t.destination} />
+                <Text
+                  style={{
+                    color: colors.textMuted,
+                    fontSize: 12,
+                    marginTop: 4,
+                  }}
+                >
+                  📅 {t.date} · 👤 {t.client} · 🛵 {t.moto_qty} motos
+                </Text>
+
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    marginTop: 12,
+                    paddingTop: 12,
+                    borderTopWidth: 1,
+                    borderTopColor: colors.border,
+                  }}
+                >
+                  <MiniStat
+                    label="Neto"
+                    value={formatMoney(t.net_freight)}
+                    color={colors.success}
+                  />
+                  <MiniStat
+                    label="Cumplido"
+                    value={formatMoney(t.balance)}
+                    color={colors.warning}
+                  />
+                </View>
+              </Card>
+            ))
+          )}
+        </View>
+      </ScrollView>
 
       {/* Modal período personalizado */}
       <Modal visible={customModalVisible} animationType="slide" transparent>
-        <View style={s.modalOverlay}>
-          <View style={s.modalContent}>
-            <Text style={s.modalTitle}>Período personalizado</Text>
+        <Pressable
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            justifyContent: "center",
+            padding: 20,
+          }}
+          onPress={() => setCustomModalVisible(false)}
+        >
+          <View
+            style={{
+              backgroundColor: colors.background,
+              borderRadius: 20,
+              padding: 20,
+            }}
+          >
+            <Text
+              style={[
+                typography.h2,
+                { color: colors.text, textAlign: "center", marginBottom: 16 },
+              ]}
+            >
+              Período personalizado
+            </Text>
 
-            <Text style={s.label}>FECHA INICIAL (YYYY-MM-DD)</Text>
-            <TextInput
-              style={s.input}
-              value={customStart}
-              onChangeText={setCustomStart}
-              placeholder="2024-01-01"
-            />
+            <View>
+              <Text
+                style={{
+                  fontSize: 11,
+                  color: colors.textMuted,
+                  fontWeight: "700",
+                  letterSpacing: 0.5,
+                  textTransform: "uppercase",
+                }}
+              >
+                Fecha inicial (YYYY-MM-DD)
+              </Text>
+              <TextInput
+                style={{
+                  backgroundColor: colors.surfaceMuted,
+                  borderRadius: 10,
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  marginTop: 4,
+                  fontSize: 16,
+                  color: colors.text,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
+                value={customStart}
+                onChangeText={setCustomStart}
+                placeholder="2024-01-01"
+                placeholderTextColor={colors.textMuted}
+              />
+            </View>
 
-            <Text style={s.label}>FECHA FINAL (YYYY-MM-DD)</Text>
-            <TextInput
-              style={s.input}
-              value={customEnd}
-              onChangeText={setCustomEnd}
-              placeholder="2024-12-31"
-            />
+            <View>
+              <Text
+                style={{
+                  fontSize: 11,
+                  color: colors.textMuted,
+                  fontWeight: "700",
+                  letterSpacing: 0.5,
+                  textTransform: "uppercase",
+                  marginTop: 12,
+                }}
+              >
+                Fecha final (YYYY-MM-DD)
+              </Text>
+              <TextInput
+                style={{
+                  backgroundColor: colors.surfaceMuted,
+                  borderRadius: 10,
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  marginTop: 4,
+                  fontSize: 16,
+                  color: colors.text,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
+                value={customEnd}
+                onChangeText={setCustomEnd}
+                placeholder="2024-12-31"
+                placeholderTextColor={colors.textMuted}
+              />
+            </View>
 
-            <Text style={s.hint}>Formato: Año-Mes-Día (ej: 2024-01-15)</Text>
+            <Text
+              style={{
+                fontSize: 11,
+                color: colors.textMuted,
+                marginTop: 6,
+                marginLeft: 2,
+              }}
+            >
+              Formato: Año-Mes-Día (ej: 2024-01-15)
+            </Text>
 
-            <View style={s.modalActions}>
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 12,
+                marginTop: 20,
+              }}
+            >
               <Pressable
-                style={[s.modalBtn, s.cancelBtn]}
+                style={({ pressed }) => [
+                  {
+                    flex: 1,
+                    paddingVertical: 14,
+                    borderRadius: 10,
+                    alignItems: "center",
+                    backgroundColor: colors.surfaceMuted,
+                    opacity: pressed ? 0.85 : 1,
+                  },
+                ]}
                 onPress={() => setCustomModalVisible(false)}
               >
-                <Text style={s.cancelText}>Cancelar</Text>
+                <Text
+                  style={{
+                    color: colors.textSecondary,
+                    fontWeight: "700",
+                  }}
+                >
+                  Cancelar
+                </Text>
               </Pressable>
               <Pressable
-                style={[s.modalBtn, s.confirmBtn]}
+                style={({ pressed }) => [
+                  {
+                    flex: 1,
+                    paddingVertical: 14,
+                    borderRadius: 10,
+                    alignItems: "center",
+                    backgroundColor: colors.primary,
+                    opacity: pressed ? 0.85 : 1,
+                  },
+                ]}
                 onPress={applyCustom}
               >
-                <Text style={s.confirmText}>Aplicar</Text>
+                <Text
+                  style={{
+                    color: colors.textOnPrimary,
+                    fontWeight: "800",
+                  }}
+                >
+                  Aplicar
+                </Text>
               </Pressable>
             </View>
           </View>
-        </View>
+        </Pressable>
       </Modal>
-    </ScrollView>
+    </Screen>
   );
 }
 
-function PeriodButton({
+function StatCard({
   label,
-  active,
-  onPress,
+  value,
+  icon,
+  variant = "neutral",
 }: {
   label: string;
-  active: boolean;
-  onPress: () => void;
+  value: string;
+  icon: string;
+  variant?: "success" | "danger" | "info" | "warning" | "neutral";
 }) {
+  const { colors } = useTheme();
+  const fg =
+    variant === "success"
+      ? colors.success
+      : variant === "danger"
+        ? colors.danger
+        : variant === "info"
+          ? colors.info
+          : variant === "warning"
+            ? colors.warning
+            : colors.text;
   return (
-    <Pressable
-      style={[s.periodBtn, active && s.periodBtnActive]}
-      onPress={onPress}
-    >
-      <Text style={[s.periodText, active && s.periodTextActive]}>{label}</Text>
-    </Pressable>
+    <View style={{ width: "48%", flexGrow: 1 }}>
+      <View
+        style={{
+          backgroundColor: colors.surface,
+          borderRadius: 12,
+          padding: 12,
+          borderLeftWidth: 4,
+          borderLeftColor: fg,
+        }}
+      >
+        <Text
+          style={{
+            fontSize: 10,
+            color: colors.textMuted,
+            fontWeight: "700",
+            textTransform: "uppercase",
+            letterSpacing: 0.5,
+          }}
+        >
+          {icon} {label}
+        </Text>
+        <Text
+          style={{
+            color: fg,
+            fontSize: 16,
+            fontWeight: "800",
+            marginTop: 4,
+            fontVariant: ["tabular-nums"],
+          }}
+          numberOfLines={1}
+        >
+          {value}
+        </Text>
+      </View>
+    </View>
   );
 }
 
-function SummaryCard({
+function MiniStat({
   label,
   value,
   color,
@@ -537,146 +856,29 @@ function SummaryCard({
   color: string;
 }) {
   return (
-    <View style={[s.summaryCard, { borderLeftColor: color }]}>
-      <Text style={s.summaryLabel}>{label}</Text>
-      <Text style={[s.summaryValue, { color }]}>{value}</Text>
+    <View>
+      <Text
+        style={{
+          fontSize: 10,
+          color: "#6b7280",
+          fontWeight: "700",
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+        }}
+      >
+        {label}
+      </Text>
+      <Text
+        style={{
+          color,
+          fontSize: 14,
+          fontWeight: "800",
+          marginTop: 2,
+          fontVariant: ["tabular-nums"],
+        }}
+      >
+        {value}
+      </Text>
     </View>
   );
 }
-
-const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#ffffff" },
-  header: {
-    padding: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
-  },
-  title: { fontSize: 24, fontWeight: "bold", color: "#111827" },
-  periodScroll: { paddingVertical: 12, paddingHorizontal: 16 },
-  periodBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "#f3f4f6",
-    marginRight: 8,
-  },
-  periodBtnActive: { backgroundColor: "#059669" },
-  periodText: { color: "#4b5563", fontWeight: "600" },
-  periodTextActive: { color: "white" },
-  customRange: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-    fontSize: 13,
-    color: "#059669",
-    fontWeight: "600",
-  },
-  summaryGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    paddingHorizontal: 16,
-    gap: 8,
-  },
-  summaryCard: {
-    width: "48%",
-    backgroundColor: "#f9fafb",
-    borderRadius: 12,
-    padding: 12,
-    borderLeftWidth: 4,
-  },
-  summaryLabel: {
-    fontSize: 10,
-    color: "#6b7280",
-    fontWeight: "700",
-    textTransform: "uppercase",
-  },
-  summaryValue: { fontSize: 16, fontWeight: "bold", marginTop: 4 },
-  exportRow: { flexDirection: "row", gap: 8, margin: 16 },
-  exportButton: {
-    backgroundColor: "#059669",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  exportButtonText: { color: "white", fontSize: 15, fontWeight: "bold" },
-  listHeader: { paddingHorizontal: 16, marginBottom: 8 },
-  listTitle: { fontSize: 14, fontWeight: "bold", color: "#111827" },
-  tripItem: {
-    backgroundColor: "#f9fafb",
-    marginHorizontal: 16,
-    marginBottom: 8,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-  },
-  tripHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 4,
-  },
-  tripDate: { fontSize: 12, color: "#6b7280" },
-  statusPaid: { fontSize: 12, color: "#059669", fontWeight: "600" },
-  statusPending: { fontSize: 12, color: "#dc2626", fontWeight: "600" },
-  tripClient: { fontSize: 15, fontWeight: "bold", color: "#111827" },
-  tripRoute: { fontSize: 13, color: "#4b5563", marginTop: 2 },
-  tripMoto: { fontSize: 12, color: "#6b7280", marginTop: 2 },
-  tripFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
-  },
-  tripNet: { fontSize: 13, color: "#059669", fontWeight: "600" },
-  tripBalance: { fontSize: 13, color: "#d97706", fontWeight: "600" },
-  emptyState: { alignItems: "center", marginTop: 40, padding: 16 },
-  emptyText: { fontSize: 16, color: "#6b7280" },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    padding: 20,
-  },
-  modalContent: { backgroundColor: "white", borderRadius: 16, padding: 20 },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#111827",
-    marginBottom: 16,
-    textAlign: "center",
-  },
-  label: {
-    fontSize: 11,
-    color: "#6b7280",
-    fontWeight: "600",
-    marginTop: 12,
-    letterSpacing: 0.5,
-  },
-  input: {
-    backgroundColor: "#f3f4f6",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginTop: 4,
-    fontSize: 16,
-    color: "#111827",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-  },
-  hint: { fontSize: 11, color: "#9ca3af", marginTop: 6, marginLeft: 2 },
-  modalActions: { flexDirection: "row", gap: 12, marginTop: 20 },
-  modalBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  cancelBtn: { backgroundColor: "#f3f4f6" },
-  cancelText: { color: "#374151", fontWeight: "600" },
-  confirmBtn: { backgroundColor: "#059669" },
-  confirmText: { color: "white", fontWeight: "bold" },
-});

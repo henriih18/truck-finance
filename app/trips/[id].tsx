@@ -9,17 +9,28 @@ import {
 } from "../../src/db/repositories/discounts.repo";
 import { calculateMileageMetrics } from "../../src/finance/metrics";
 import { getDatabase } from "../../src/db/connection";
+import { useTheme } from "../../src/theme/ThemeContext";
 import {
   View,
   Text,
   ScrollView,
   Pressable,
   Alert,
-  StyleSheet,
   ActivityIndicator,
   Modal,
   TextInput,
 } from "react-native";
+import {
+  Screen,
+  Card,
+  SectionTitle,
+  StatusPill,
+  PrimaryButton,
+  Divider,
+  RouteArrow,
+  spacing,
+  typography,
+} from "../../src/ui/components";
 
 type ExpenseRow = {
   _local_id: string;
@@ -38,6 +49,7 @@ const CATEGORIES: Record<string, { label: string; icon: string }> = {
 };
 
 export default function TripDetail() {
+  const { colors } = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const repo = useTripsRepo();
@@ -49,22 +61,18 @@ export default function TripDetail() {
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("Efectivo");
   const [payNotes, setPayNotes] = useState("");
-  // Modal de finalización (pide kilometraje final)
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [finalMileage, setFinalMileage] = useState("");
 
   useEffect(() => {
     if (!id || !repo) return;
-
     const loadData = async () => {
       try {
         const t = await repo.getById(id);
         setTrip(t);
-
         const db = await getDatabase();
         const expRepo = new ExpensesRepository(db);
         const discRepo = new DiscountsRepository(db);
-
         const [expList, discList] = await Promise.all([
           expRepo.listByTrip(id),
           discRepo.listByTrip(id),
@@ -75,7 +83,6 @@ export default function TripDetail() {
         console.error("Error cargando viaje:", e);
       }
     };
-
     loadData();
     const interval = setInterval(loadData, 2000);
     return () => clearInterval(interval);
@@ -83,12 +90,20 @@ export default function TripDetail() {
 
   if (!repo || !trip) {
     return (
-      <View style={s.center}>
-        <ActivityIndicator size="large" color="#059669" />
-        <Text style={{ marginTop: 10, color: "#6b7280" }}>
-          Cargando datos del viaje...
-        </Text>
-      </View>
+      <Screen>
+        <View
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={{ marginTop: 10, color: colors.textMuted }}>
+            Cargando datos del viaje...
+          </Text>
+        </View>
+      </Screen>
     );
   }
 
@@ -102,7 +117,6 @@ export default function TripDetail() {
   const expensesTotal = expenses.reduce((a, e) => a + e.amount, 0);
   const available = trip.advance - expensesTotal;
 
-  // Desglose de gastos por categoría
   const expensesByCategory = Object.keys(CATEGORIES)
     .map((code) => {
       const total = expenses
@@ -112,12 +126,10 @@ export default function TripDetail() {
     })
     .filter((c) => c.total > 0);
 
-  // Gasto solo de combustible (para KPIs de kilometraje)
   const fuelExpenseTotal = expenses
     .filter((e) => e.category_code === "COMBUSTIBLE")
     .reduce((a, e) => a + e.amount, 0);
 
-  // Métricas de kilometraje
   const mileageMetrics = calculateMileageMetrics({
     initialMileage: trip.initial_mileage,
     finalMileage: trip.final_mileage,
@@ -125,13 +137,12 @@ export default function TripDetail() {
     totalExpenses: expensesTotal,
   });
 
-  const onFinish = async () => {
+  const onFinish = () => {
     Alert.alert("Finalizar viaje", "¿Confirmas que el viaje ha terminado?", [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Finalizar",
         onPress: () => {
-          // Pre-llenar kilometraje final sugerido (si hay inicial, sumar estimación)
           setFinalMileage(
             trip.initial_mileage != null ? String(trip.initial_mileage) : "",
           );
@@ -189,289 +200,552 @@ export default function TripDetail() {
   };
 
   return (
-    <ScrollView style={s.container}>
-      <View style={s.header}>
-        <Text style={s.title}>Viaje #{trip.trip_number}</Text>
-        <Text style={s.subtitle}>
-          {trip.origin} → {trip.destination} · {trip.date}
-        </Text>
-        {trip.client ? (
-          <Text style={s.client}>Cliente: {trip.client}</Text>
-        ) : null}
-        {trip.moto_qty > 0 ? (
-          <Text style={s.motoQty}>🛵 {trip.moto_qty} motos</Text>
-        ) : null}
+    <Screen>
+      {/* HERO Header con número de viaje + estado */}
+      <View
+        style={{
+          backgroundColor: colors.surface,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+          paddingHorizontal: spacing.md,
+          paddingTop: spacing.lg,
+          paddingBottom: spacing.md,
+        }}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 6,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: colors.primaryMuted,
+              borderRadius: 6,
+              paddingHorizontal: 8,
+              paddingVertical: 3,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.primary,
+                fontSize: 12,
+                fontWeight: "800",
+                letterSpacing: 1,
+              }}
+            >
+              #{trip.trip_number}
+            </Text>
+          </View>
+          <StatusPill
+            variant={
+              trip.balance_status === "paid"
+                ? "success"
+                : trip.status === "finished"
+                  ? "warning"
+                  : "info"
+            }
+          >
+            {trip.balance_status === "paid"
+              ? "✓ Paz y salvo"
+              : trip.status === "finished"
+                ? "Pendiente"
+                : "En curso"}
+          </StatusPill>
+        </View>
+
+        <RouteArrow origin={trip.origin} destination={trip.destination} />
+
+        <View
+          style={{
+            flexDirection: "row",
+            gap: 12,
+            marginTop: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          {trip.client ? (
+            <Text style={{ color: colors.textSecondary, fontSize: 13 }}>
+              👤 {trip.client}
+            </Text>
+          ) : null}
+          <Text style={{ color: colors.textMuted, fontSize: 13 }}>
+            📅 {trip.date}
+          </Text>
+          {trip.moto_qty > 0 ? (
+            <Text style={{ color: colors.textMuted, fontSize: 13 }}>
+              🛵 {trip.moto_qty} motos
+            </Text>
+          ) : null}
+        </View>
       </View>
 
-      {/* SECCIÓN FLETE */}
-      <Section title="FLETE">
-        <Row
-          label="Flete total"
-          value={`$${trip.gross_freight.toLocaleString("es-CO")}`}
-          bold
-        />
-      </Section>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: spacing.md, paddingBottom: 80 }}
+      >
+        {/* FLETE TOTAL */}
+        <SectionTitle>Flete</SectionTitle>
+        <Card>
+          <DetailRow
+            label="Flete total"
+            value={`$${trip.gross_freight.toLocaleString("es-CO")}`}
+            big
+          />
+        </Card>
 
-      {/* SECCIÓN DESCUENTOS */}
-      <Section title="DESCUENTOS">
-        {discounts.length === 0 ? (
-          <Text style={s.emptyText}>Sin descuentos aplicados.</Text>
-        ) : (
-          <>
-            {discounts.map((d) => {
-              const isDiscount = d.amount > 0;
-              return (
-                <Row
-                  key={d._local_id}
-                  label={d.label}
-                  value={`${isDiscount ? "-" : "+"}$${Math.abs(d.amount).toLocaleString("es-CO")}`}
-                  valueColor={isDiscount ? "#dc2626" : "#059669"}
-                />
-              );
-            })}
-            {totalCharges > 0 && (
-              <>
-                <Divider />
-                <Row
-                  label="Total descuentos"
-                  value={`-$${totalDiscounts.toLocaleString("es-CO")}`}
-                  valueColor="#dc2626"
-                />
-                <Row
-                  label="Total cargos extra"
-                  value={`+$${totalCharges.toLocaleString("es-CO")}`}
-                  valueColor="#059669"
-                />
-              </>
-            )}
-          </>
-        )}
-      </Section>
-
-      {/* SECCIÓN FLETE NETO */}
-      <Section title="FLETE NETO" highlight>
-        <Row
-          label="Flete neto"
-          value={`$${trip.net_freight.toLocaleString("es-CO")}`}
-          bold
-          big
-        />
-      </Section>
-
-      {/* SECCIÓN ANTICIPO */}
-      <Section title="ANTICIPO (70%)">
-        <Row
-          label="Anticipo recibido"
-          value={`$${trip.advance.toLocaleString("es-CO")}`}
-          bold
-        />
-      </Section>
-
-      {/* SECCIÓN GASTOS */}
-      <Section title="GASTOS DEL VIAJE">
-        {expensesByCategory.length > 0 ? (
-          <>
-            {expensesByCategory.map((cat) => (
-              <Row
-                key={cat.code}
-                label={`${cat.icon} ${cat.label}`}
-                value={`$${cat.total.toLocaleString("es-CO")}`}
-              />
-            ))}
-            <Divider />
-          </>
-        ) : (
-          <Text style={s.emptyText}>Sin gastos registrados aún.</Text>
-        )}
-
-        <Row
-          label="Total gastos"
-          value={`$${expensesTotal.toLocaleString("es-CO")}`}
-          valueColor="#dc2626"
-        />
-        <Row
-          label="Disponible del anticipo"
-          value={`$${available.toLocaleString("es-CO")}`}
-          bold
-          valueColor={available >= 0 ? "#059669" : "#dc2626"}
-        />
-
-        <Link href={`/trips/${id}/add-expense`} asChild>
-          <Pressable style={s.addExpenseButton}>
-            <Text style={s.addExpenseText}>+ AGREGAR GASTO</Text>
-          </Pressable>
-        </Link>
-
-        {expenses.length > 0 && (
-          <View style={s.expensesList}>
-            <Text style={s.expensesListTitle}>DETALLE</Text>
-            {expenses.map((exp) => {
-              const cat = CATEGORIES[exp.category_code] ?? {
-                label: exp.category_code,
-                icon: "🔧",
-              };
-              return (
-                <View key={exp._local_id} style={s.expenseItem}>
-                  <View style={s.expenseLeft}>
-                    <Text style={s.expenseIcon}>{cat.icon}</Text>
-                    <View>
-                      <Text style={s.expenseDesc}>
-                        {exp.description || cat.label}
-                      </Text>
-                      <Text style={s.expenseDate}>
-                        {exp.date}{" "}
-                        {exp.mileage
-                          ? `· Km: ${exp.mileage.toLocaleString("es-CO")}`
-                          : ""}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={s.expenseAmount}>
-                    -${Number(exp.amount).toLocaleString("es-CO")}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
-        )}
-      </Section>
-
-      {/* SECCIÓN CUMPLIDO */}
-      <Section title="CUMPLIDO (30%)">
-        <Row
-          label="Valor"
-          value={`$${trip.balance.toLocaleString("es-CO")}`}
-          bold
-        />
-        <Row
-          label="Estado"
-          value={
-            trip.balance_status === "paid" ? "🟢 Paz y salvo" : "🔴 Pendiente"
-          }
-        />
-        {trip.balance_status === "paid" && trip.balance_paid_at && (
-          <>
-            <Divider />
-            <Row label="Pagado el" value={trip.balance_paid_at.slice(0, 10)} />
-            {trip.balance_amount != null && (
-              <Row
-                label="Valor recibido"
-                value={`$${trip.balance_amount.toLocaleString("es-CO")}`}
-              />
-            )}
-            {trip.balance_method && (
-              <Row label="Método" value={trip.balance_method} />
-            )}
-            {trip.balance_notes && (
-              <Row label="Observaciones" value={trip.balance_notes} />
-            )}
-          </>
-        )}
-      </Section>
-
-      {/* SECCIÓN KILOMETRAJE (solo si hay datos de kilometraje) */}
-      {(trip.initial_mileage != null || trip.final_mileage != null) && (
-        <Section title="KILOMETRAJE">
-          {trip.initial_mileage != null && (
-            <Row
-              label="Km inicial"
-              value={`${trip.initial_mileage.toLocaleString("es-CO")} km`}
-            />
-          )}
-          {trip.final_mileage != null && (
-            <Row
-              label="Km final"
-              value={`${trip.final_mileage.toLocaleString("es-CO")} km`}
-            />
-          )}
-          {mileageMetrics.distance != null && (
+        {/* DESCUENTOS */}
+        <SectionTitle>Descuentos del flete</SectionTitle>
+        <Card>
+          {discounts.length === 0 ? (
+            <Text
+              style={{
+                color: colors.textMuted,
+                fontStyle: "italic",
+                paddingVertical: 8,
+              }}
+            >
+              Sin descuentos aplicados.
+            </Text>
+          ) : (
             <>
+              {discounts.map((d) => {
+                const isDiscount = d.amount > 0;
+                return (
+                  <DetailRow
+                    key={d._local_id}
+                    label={d.label}
+                    value={`${isDiscount ? "−" : "+"}$${Math.abs(d.amount).toLocaleString("es-CO")}`}
+                    valueColor={isDiscount ? colors.danger : colors.success}
+                  />
+                );
+              })}
+              {totalCharges > 0 && (
+                <>
+                  <Divider />
+                  <DetailRow
+                    label="Total descuentos"
+                    value={`−$${totalDiscounts.toLocaleString("es-CO")}`}
+                    valueColor={colors.danger}
+                  />
+                  <DetailRow
+                    label="Total cargos extra"
+                    value={`+$${totalCharges.toLocaleString("es-CO")}`}
+                    valueColor={colors.success}
+                  />
+                </>
+              )}
+            </>
+          )}
+        </Card>
+
+        {/* FLETE NETO - HERO */}
+        <View
+          style={{
+            backgroundColor: colors.primary,
+            borderRadius: 16,
+            padding: 20,
+            marginTop: spacing.sm,
+            marginBottom: spacing.md,
+          }}
+        >
+          <Text
+            style={{
+              color: "rgba(255,255,255,0.85)",
+              fontSize: 11,
+              fontWeight: "700",
+              textTransform: "uppercase",
+              letterSpacing: 1,
+            }}
+          >
+            Flete neto
+          </Text>
+          <Text
+            style={{
+              color: "white",
+              fontSize: 28,
+              fontWeight: "900",
+              marginTop: 4,
+              fontVariant: ["tabular-nums"],
+            }}
+          >
+            ${trip.net_freight.toLocaleString("es-CO")}
+          </Text>
+        </View>
+
+        {/* ANTICIPO */}
+        <SectionTitle>Anticipo</SectionTitle>
+        <Card>
+          <DetailRow
+            label="Anticipo recibido"
+            value={`$${trip.advance.toLocaleString("es-CO")}`}
+            big
+            valueColor={colors.success}
+          />
+        </Card>
+
+        {/* GASTOS DEL VIAJE */}
+        <SectionTitle>Gastos del viaje</SectionTitle>
+        <Card>
+          {expensesByCategory.length > 0 ? (
+            <>
+              {expensesByCategory.map((cat) => (
+                <DetailRow
+                  key={cat.code}
+                  label={`${cat.icon} ${cat.label}`}
+                  value={`$${cat.total.toLocaleString("es-CO")}`}
+                />
+              ))}
               <Divider />
-              <Row
-                label="Km recorridos"
-                value={`${mileageMetrics.distance.toLocaleString("es-CO")} km`}
-                bold
-              />
             </>
-          )}
-          {mileageMetrics.distance != null && mileageMetrics.distance > 0 && (
-            <>
-              {mileageMetrics.fuelCostPerKm != null && (
-                <Row
-                  label="Combustible / km"
-                  value={`$${mileageMetrics.fuelCostPerKm.toLocaleString("es-CO")}`}
-                  valueColor="#dc2626"
-                />
-              )}
-              {mileageMetrics.costPerKm != null && (
-                <Row
-                  label="Costo total / km"
-                  value={`$${mileageMetrics.costPerKm.toLocaleString("es-CO")}`}
-                  valueColor="#dc2626"
-                />
-              )}
-              {fuelExpenseTotal > 0 && (
-                <Row
-                  label="Gasto en combustible"
-                  value={`$${fuelExpenseTotal.toLocaleString("es-CO")}`}
-                />
-              )}
-            </>
-          )}
-          {trip.status === "in_progress" && trip.initial_mileage == null && (
-            <Text style={s.emptyText}>
-              ℹ️ No se registró kilometraje inicial. Se podrá ingresar el final
-              al finalizar el viaje.
+          ) : (
+            <Text
+              style={{
+                color: colors.textMuted,
+                fontStyle: "italic",
+                paddingVertical: 8,
+              }}
+            >
+              Sin gastos registrados aún.
             </Text>
           )}
-        </Section>
-      )}
 
-      {trip.status === "in_progress" && (
-        <Pressable style={s.buttonOrange} onPress={onFinish}>
-          <Text style={s.buttonText}>FINALIZAR VIAJE</Text>
-        </Pressable>
-      )}
+          <DetailRow
+            label="Total gastos"
+            value={`$${expensesTotal.toLocaleString("es-CO")}`}
+            valueColor={colors.danger}
+          />
+          <DetailRow
+            label="Disponible del anticipo"
+            value={`$${available.toLocaleString("es-CO")}`}
+            big
+            valueColor={available >= 0 ? colors.success : colors.danger}
+          />
 
-      {trip.status === "finished" && trip.balance_status === "pending" && (
-        <Pressable style={s.buttonGreen} onPress={onMarkPaid}>
-          <Text style={s.buttonText}>MARCAR COMO PAZ Y SALVO</Text>
-        </Pressable>
-      )}
+          <Link href={`/trips/${id}/add-expense`} asChild>
+            <Pressable
+              style={({ pressed }) => [
+                {
+                  backgroundColor: colors.primary,
+                  borderRadius: 12,
+                  paddingVertical: 12,
+                  alignItems: "center",
+                  marginTop: 12,
+                  flexDirection: "row",
+                  justifyContent: "center",
+                  gap: 6,
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
+            >
+              <Text
+                style={{
+                  color: colors.textOnPrimary,
+                  fontWeight: "800",
+                  fontSize: 14,
+                }}
+              >
+                + Agregar gasto
+              </Text>
+            </Pressable>
+          </Link>
 
-      <View style={{ height: 40 }} />
+          {expenses.length > 0 && (
+            <View style={{ marginTop: 16 }}>
+              <Text
+                style={{
+                  fontSize: 11,
+                  color: colors.textMuted,
+                  fontWeight: "700",
+                  letterSpacing: 0.5,
+                  textTransform: "uppercase",
+                  marginBottom: 8,
+                }}
+              >
+                Detalle
+              </Text>
+              {expenses.map((exp) => {
+                const cat = CATEGORIES[exp.category_code] ?? {
+                  label: exp.category_code,
+                  icon: "🔧",
+                };
+                return (
+                  <View
+                    key={exp._local_id}
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      paddingVertical: 10,
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.border,
+                      gap: 8,
+                    }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                        flex: 1,
+                      }}
+                    >
+                      <Text style={{ fontSize: 20 }}>{cat.icon}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={{
+                            color: colors.text,
+                            fontWeight: "600",
+                            fontSize: 14,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {exp.description || cat.label}
+                        </Text>
+                        <Text
+                          style={{
+                            color: colors.textMuted,
+                            fontSize: 12,
+                          }}
+                        >
+                          {exp.date}
+                          {exp.mileage
+                            ? ` · Km: ${exp.mileage.toLocaleString("es-CO")}`
+                            : ""}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text
+                      style={{
+                        color: colors.danger,
+                        fontWeight: "800",
+                        fontSize: 14,
+                        fontVariant: ["tabular-nums"],
+                      }}
+                    >
+                      −${Number(exp.amount).toLocaleString("es-CO")}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </Card>
+
+        {/* CUMPLIDO */}
+        <SectionTitle>Cumplido (30%)</SectionTitle>
+        <Card>
+          <DetailRow
+            label="Valor"
+            value={`$${trip.balance.toLocaleString("es-CO")}`}
+            big
+          />
+          <DetailRow
+            label="Estado"
+            value={
+              trip.balance_status === "paid" ? "✓ Paz y salvo" : "🔴 Pendiente"
+            }
+            valueColor={
+              trip.balance_status === "paid" ? colors.success : colors.danger
+            }
+          />
+          {trip.balance_status === "paid" && trip.balance_paid_at && (
+            <>
+              <Divider />
+              <DetailRow
+                label="Pagado el"
+                value={trip.balance_paid_at.slice(0, 10)}
+              />
+              {trip.balance_amount != null && (
+                <DetailRow
+                  label="Valor recibido"
+                  value={`$${trip.balance_amount.toLocaleString("es-CO")}`}
+                />
+              )}
+              {trip.balance_method && (
+                <DetailRow label="Método" value={trip.balance_method} />
+              )}
+              {trip.balance_notes && (
+                <DetailRow label="Observaciones" value={trip.balance_notes} />
+              )}
+            </>
+          )}
+        </Card>
+
+        {/* KILOMETRAJE */}
+        {(trip.initial_mileage != null || trip.final_mileage != null) && (
+          <>
+            <SectionTitle>Kilometraje</SectionTitle>
+            <Card>
+              {trip.initial_mileage != null && (
+                <DetailRow
+                  label="Km inicial"
+                  value={`${trip.initial_mileage.toLocaleString("es-CO")} km`}
+                />
+              )}
+              {trip.final_mileage != null && (
+                <DetailRow
+                  label="Km final"
+                  value={`${trip.final_mileage.toLocaleString("es-CO")} km`}
+                />
+              )}
+              {mileageMetrics.distance != null && (
+                <>
+                  <Divider />
+                  <DetailRow
+                    label="Km recorridos"
+                    value={`${mileageMetrics.distance.toLocaleString("es-CO")} km`}
+                    big
+                  />
+                </>
+              )}
+              {mileageMetrics.distance != null &&
+                mileageMetrics.distance > 0 && (
+                  <>
+                    {mileageMetrics.fuelCostPerKm != null && (
+                      <DetailRow
+                        label="Combustible / km"
+                        value={`$${mileageMetrics.fuelCostPerKm.toLocaleString("es-CO")}`}
+                        valueColor={colors.danger}
+                      />
+                    )}
+                    {mileageMetrics.costPerKm != null && (
+                      <DetailRow
+                        label="Costo total / km"
+                        value={`$${mileageMetrics.costPerKm.toLocaleString("es-CO")}`}
+                        valueColor={colors.danger}
+                      />
+                    )}
+                    {fuelExpenseTotal > 0 && (
+                      <DetailRow
+                        label="Gasto en combustible"
+                        value={`$${fuelExpenseTotal.toLocaleString("es-CO")}`}
+                      />
+                    )}
+                  </>
+                )}
+              {trip.status === "in_progress" &&
+                trip.initial_mileage == null && (
+                  <Text
+                    style={{
+                      color: colors.textMuted,
+                      fontStyle: "italic",
+                      paddingVertical: 8,
+                    }}
+                  >
+                    ℹ️ No se registró kilometraje inicial. Se podrá ingresar el
+                    final al finalizar el viaje.
+                  </Text>
+                )}
+            </Card>
+          </>
+        )}
+
+        {/* BOTONES DE ACCIÓN */}
+        {trip.status === "in_progress" && (
+          <PrimaryButton
+            label="FINALIZAR VIAJE"
+            icon="✓"
+            onPress={onFinish}
+            style={{ backgroundColor: "#ea580c" }}
+          />
+        )}
+        {trip.status === "finished" && trip.balance_status === "pending" && (
+          <PrimaryButton
+            label="MARCAR COMO PAZ Y SALVO"
+            icon="💰"
+            onPress={onMarkPaid}
+          />
+        )}
+      </ScrollView>
 
       {/* MODAL DE PAGO */}
-      <Modal visible={showPayModal} animationType="slide" transparent={true}>
-        <View style={s.modalOverlay}>
-          <View style={s.modalContent}>
-            <Text style={s.modalTitle}>Registrar Pago del Cumplido</Text>
+      <Modal visible={showPayModal} animationType="slide" transparent>
+        <Pressable
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            justifyContent: "center",
+            padding: 20,
+          }}
+          onPress={() => setShowPayModal(false)}
+        >
+          <View
+            style={{
+              backgroundColor: colors.background,
+              borderRadius: 20,
+              padding: 20,
+            }}
+          >
+            <Text
+              style={[
+                typography.h2,
+                {
+                  color: colors.text,
+                  textAlign: "center",
+                  marginBottom: 16,
+                },
+              ]}
+            >
+              Registrar pago del cumplido
+            </Text>
 
-            <Text style={s.label}>FECHA DE PAGO</Text>
-            <TextInput
-              style={s.input}
+            <Field
+              label="Fecha de pago"
               value={payDate}
               onChangeText={setPayDate}
             />
 
-            <Text style={s.label}>VALOR RECIBIDO ($)</Text>
-            <TextInput
-              style={s.input}
+            <Field
+              label="Valor recibido ($)"
               value={payAmount}
               onChangeText={setPayAmount}
               keyboardType="numeric"
             />
 
-            <Text style={s.label}>MÉTODO DE PAGO</Text>
-            <View style={s.methodRow}>
+            <Text
+              style={{
+                fontSize: 11,
+                color: colors.textMuted,
+                fontWeight: "700",
+                marginTop: 12,
+                letterSpacing: 0.5,
+                textTransform: "uppercase",
+              }}
+            >
+              Método de pago
+            </Text>
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
               {["Efectivo", "Transferencia", "Cheque"].map((m) => (
                 <Pressable
                   key={m}
-                  style={[s.methodBtn, payMethod === m && s.methodBtnActive]}
+                  style={({ pressed }) => [
+                    {
+                      flex: 1,
+                      paddingVertical: 10,
+                      borderRadius: 10,
+                      alignItems: "center",
+                      backgroundColor:
+                        payMethod === m ? colors.primary : colors.surfaceMuted,
+                      borderWidth: 1,
+                      borderColor:
+                        payMethod === m ? colors.primary : colors.border,
+                      opacity: pressed ? 0.85 : 1,
+                    },
+                  ]}
                   onPress={() => setPayMethod(m)}
                 >
                   <Text
-                    style={payMethod === m ? s.methodTextActive : s.methodText}
+                    style={{
+                      color:
+                        payMethod === m
+                          ? colors.textOnPrimary
+                          : colors.textSecondary,
+                      fontWeight: "700",
+                      fontSize: 12,
+                    }}
                   >
                     {m}
                   </Text>
@@ -479,110 +753,222 @@ export default function TripDetail() {
               ))}
             </View>
 
-            <Text style={s.label}>OBSERVACIONES (Opcional)</Text>
-            <TextInput
-              style={[s.input, { height: 60, textAlignVertical: "top" }]}
+            <Field
+              label="Observaciones (opcional)"
               value={payNotes}
               onChangeText={setPayNotes}
               multiline
             />
 
-            <View style={s.modalActions}>
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 10,
+                marginTop: 20,
+              }}
+            >
               <Pressable
-                style={s.cancelBtn}
+                style={({ pressed }) => [
+                  {
+                    flex: 1,
+                    paddingVertical: 12,
+                    borderRadius: 10,
+                    alignItems: "center",
+                    backgroundColor: colors.surfaceMuted,
+                    opacity: pressed ? 0.85 : 1,
+                  },
+                ]}
                 onPress={() => setShowPayModal(false)}
               >
-                <Text style={s.cancelText}>Cancelar</Text>
+                <Text
+                  style={{
+                    color: colors.textSecondary,
+                    fontWeight: "700",
+                  }}
+                >
+                  Cancelar
+                </Text>
               </Pressable>
-              <Pressable style={s.confirmBtn} onPress={handleConfirmPay}>
-                <Text style={s.confirmText}>Confirmar Pago</Text>
+              <Pressable
+                style={({ pressed }) => [
+                  {
+                    flex: 1,
+                    paddingVertical: 12,
+                    borderRadius: 10,
+                    alignItems: "center",
+                    backgroundColor: colors.primary,
+                    opacity: pressed ? 0.85 : 1,
+                  },
+                ]}
+                onPress={handleConfirmPay}
+              >
+                <Text
+                  style={{
+                    color: colors.textOnPrimary,
+                    fontWeight: "800",
+                  }}
+                >
+                  Confirmar pago
+                </Text>
               </Pressable>
             </View>
           </View>
-        </View>
+        </Pressable>
       </Modal>
 
-      {/* MODAL DE FINALIZACIÓN (pide kilometraje final) */}
-      <Modal visible={showFinishModal} animationType="slide" transparent={true}>
-        <View style={s.modalOverlay}>
-          <View style={s.modalContent}>
-            <Text style={s.modalTitle}>Finalizar viaje</Text>
-            <Text style={s.modalSub}>
+      {/* MODAL DE FINALIZACIÓN */}
+      <Modal visible={showFinishModal} animationType="slide" transparent>
+        <Pressable
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            justifyContent: "center",
+            padding: 20,
+          }}
+          onPress={() => setShowFinishModal(false)}
+        >
+          <View
+            style={{
+              backgroundColor: colors.background,
+              borderRadius: 20,
+              padding: 20,
+            }}
+          >
+            <Text
+              style={[
+                typography.h2,
+                {
+                  color: colors.text,
+                  textAlign: "center",
+                  marginBottom: 8,
+                },
+              ]}
+            >
+              Finalizar viaje
+            </Text>
+            <Text
+              style={{
+                fontSize: 13,
+                color: colors.textMuted,
+                textAlign: "center",
+                marginBottom: 12,
+              }}
+            >
               Registra el kilometraje final del camión (opcional).
               {trip.initial_mileage != null
                 ? `\nKm inicial: ${trip.initial_mileage.toLocaleString("es-CO")} km`
                 : ""}
             </Text>
 
-            <Text style={s.label}>KILOMETRAJE FINAL</Text>
-            <TextInput
-              style={s.input}
+            <Field
+              label="Kilometraje final"
               value={finalMileage}
               onChangeText={setFinalMileage}
               keyboardType="numeric"
               placeholder="Ej: 150000"
             />
 
-            <View style={s.modalActions}>
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 10,
+                marginTop: 20,
+              }}
+            >
               <Pressable
-                style={s.cancelBtn}
+                style={({ pressed }) => [
+                  {
+                    flex: 1,
+                    paddingVertical: 12,
+                    borderRadius: 10,
+                    alignItems: "center",
+                    backgroundColor: colors.surfaceMuted,
+                    opacity: pressed ? 0.85 : 1,
+                  },
+                ]}
                 onPress={() => setShowFinishModal(false)}
               >
-                <Text style={s.cancelText}>Cancelar</Text>
+                <Text
+                  style={{
+                    color: colors.textSecondary,
+                    fontWeight: "700",
+                  }}
+                >
+                  Cancelar
+                </Text>
               </Pressable>
-              <Pressable style={s.confirmBtn} onPress={handleConfirmFinish}>
-                <Text style={s.confirmText}>Finalizar</Text>
+              <Pressable
+                style={({ pressed }) => [
+                  {
+                    flex: 1,
+                    paddingVertical: 12,
+                    borderRadius: 10,
+                    alignItems: "center",
+                    backgroundColor: "#ea580c",
+                    opacity: pressed ? 0.85 : 1,
+                  },
+                ]}
+                onPress={handleConfirmFinish}
+              >
+                <Text
+                  style={{
+                    color: "white",
+                    fontWeight: "800",
+                  }}
+                >
+                  Finalizar
+                </Text>
               </Pressable>
             </View>
           </View>
-        </View>
+        </Pressable>
       </Modal>
-    </ScrollView>
+    </Screen>
   );
 }
 
-function Section({
-  title,
-  children,
-  highlight,
-}: {
-  title: string;
-  children: React.ReactNode;
-  highlight?: boolean;
-}) {
-  return (
-    <View style={[s.section, highlight && s.sectionHighlight]}>
-      <Text style={[s.sectionTitle, highlight && s.sectionTitleHighlight]}>
-        {title}
-      </Text>
-      <View style={{ marginTop: 8 }}>{children}</View>
-    </View>
-  );
-}
-
-function Row({
+/* ============================================================
+ *  DetailRow: label + value con jerarquía
+ * ============================================================ */
+function DetailRow({
   label,
   value,
-  bold,
   big,
   valueColor,
 }: {
   label: string;
   value: string;
-  bold?: boolean;
   big?: boolean;
   valueColor?: string;
 }) {
+  const { colors } = useTheme();
   return (
-    <View style={s.row}>
-      <Text style={[s.rowLabel, bold && s.boldText]}>{label}</Text>
+    <View
+      style={{
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        paddingVertical: 8,
+      }}
+    >
       <Text
-        style={[
-          s.rowValue,
-          bold && s.boldText,
-          big && s.bigText,
-          valueColor ? { color: valueColor } : null,
-        ]}
+        style={{
+          color: colors.textSecondary,
+          fontSize: 14,
+          flexShrink: 1,
+        }}
+      >
+        {label}
+      </Text>
+      <Text
+        style={{
+          color: valueColor ?? colors.text,
+          fontWeight: big ? "800" : "600",
+          fontSize: big ? 18 : 14,
+          fontVariant: ["tabular-nums"],
+          marginLeft: 12,
+          textAlign: "right",
+        }}
       >
         {value}
       </Text>
@@ -590,175 +976,60 @@ function Row({
   );
 }
 
-function Divider() {
-  return <View style={s.divider} />;
+/* ============================================================
+ *  Field: label + input (para los modals)
+ * ============================================================ */
+function Field({
+  label,
+  value,
+  onChangeText,
+  keyboardType = "default",
+  placeholder,
+  multiline,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  keyboardType?: "default" | "numeric";
+  placeholder?: string;
+  multiline?: boolean;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View>
+      <Text
+        style={{
+          fontSize: 11,
+          color: colors.textMuted,
+          fontWeight: "700",
+          marginTop: 12,
+          letterSpacing: 0.5,
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </Text>
+      <TextInput
+        style={{
+          backgroundColor: colors.surfaceMuted,
+          borderRadius: 10,
+          paddingHorizontal: 14,
+          paddingVertical: 10,
+          marginTop: 4,
+          fontSize: 16,
+          color: colors.text,
+          borderWidth: 1,
+          borderColor: colors.border,
+          minHeight: multiline ? 70 : 44,
+          textAlignVertical: multiline ? "top" : "center",
+        }}
+        value={value}
+        onChangeText={onChangeText}
+        keyboardType={keyboardType}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textMuted}
+        multiline={multiline}
+      />
+    </View>
+  );
 }
-
-const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#ffffff" },
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "white",
-  },
-  header: { padding: 16, borderBottomWidth: 1, borderBottomColor: "#e5e7eb" },
-  title: { fontSize: 24, fontWeight: "bold", color: "#111827" },
-  subtitle: { color: "#6b7280", marginTop: 4 },
-  client: { color: "#374151", marginTop: 4, fontSize: 13 },
-  motoQty: { color: "#059669", marginTop: 4, fontSize: 13, fontWeight: "600" },
-  section: {
-    backgroundColor: "#f9fafb",
-    borderRadius: 12,
-    padding: 16,
-    margin: 16,
-    marginBottom: 0,
-  },
-  sectionHighlight: {
-    backgroundColor: "#d1fae5",
-    borderWidth: 1,
-    borderColor: "#059669",
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: "bold",
-    color: "#6b7280",
-    letterSpacing: 0.5,
-  },
-  sectionTitleHighlight: {
-    color: "#065f46",
-  },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 8,
-    alignItems: "center",
-  },
-  rowLabel: { color: "#4b5563", fontSize: 14 },
-  rowValue: { color: "#111827", fontWeight: "500", fontSize: 14 },
-  boldText: { fontWeight: "bold" },
-  bigText: { fontSize: 18 },
-  divider: { height: 1, backgroundColor: "#e5e7eb", marginVertical: 8 },
-  emptyText: {
-    color: "#9ca3af",
-    fontStyle: "italic",
-    paddingVertical: 8,
-  },
-  addExpenseButton: {
-    backgroundColor: "#059669",
-    borderRadius: 8,
-    paddingVertical: 10,
-    alignItems: "center",
-    marginTop: 12,
-  },
-  addExpenseText: { color: "white", fontWeight: "bold", fontSize: 14 },
-  expensesList: { marginTop: 16 },
-  expensesListTitle: {
-    fontSize: 11,
-    color: "#9ca3af",
-    fontWeight: "700",
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  expenseItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
-  },
-  expenseLeft: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
-  expenseIcon: { fontSize: 20 },
-  expenseDesc: { color: "#111827", fontWeight: "600", fontSize: 14 },
-  expenseDate: { color: "#6b7280", fontSize: 12 },
-  expenseAmount: { color: "#dc2626", fontWeight: "bold", fontSize: 14 },
-  buttonOrange: {
-    backgroundColor: "#ea580c",
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: "center",
-    margin: 16,
-    marginTop: 24,
-  },
-  buttonGreen: {
-    backgroundColor: "#059669",
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: "center",
-    margin: 16,
-    marginTop: 24,
-  },
-  buttonText: { color: "white", fontSize: 16, fontWeight: "bold" },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: 20,
-    elevation: 5,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#111827",
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  modalSub: {
-    fontSize: 13,
-    color: "#6b7280",
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  methodRow: { flexDirection: "row", gap: 8, marginTop: 4 },
-  methodBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignItems: "center",
-    backgroundColor: "#f3f4f6",
-  },
-  methodBtnActive: { backgroundColor: "#059669" },
-  methodText: { color: "#4b5563", fontWeight: "600", fontSize: 12 },
-  methodTextActive: { color: "white", fontWeight: "bold", fontSize: 12 },
-  modalActions: { flexDirection: "row", gap: 10, marginTop: 20 },
-  cancelBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-    backgroundColor: "#e5e7eb",
-  },
-  cancelText: { color: "#374151", fontWeight: "bold" },
-  confirmBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-    backgroundColor: "#059669",
-  },
-  confirmText: { color: "white", fontWeight: "bold" },
-  label: {
-    fontSize: 11,
-    color: "#6b7280",
-    fontWeight: "600",
-    marginTop: 12,
-    letterSpacing: 0.5,
-  },
-  input: {
-    backgroundColor: "#f3f4f6",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginTop: 4,
-    fontSize: 16,
-    color: "#111827",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-  },
-});

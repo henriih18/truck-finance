@@ -1,125 +1,218 @@
 import { View, Text, FlatList, Pressable, StyleSheet } from "react-native";
 import { Link } from "expo-router";
 import { useTrips } from "../../src/hooks/useTrips";
+import { useTheme } from "../../src/theme/ThemeContext";
 import { SyncIndicator } from "../../src/ui/SyncIndicator";
+import {
+  Screen,
+  ScreenHeader,
+  Card,
+  StatusPill,
+  RouteArrow,
+  EmptyState,
+  PrimaryButton,
+  spacing,
+  typography,
+} from "../../src/ui/components";
 
 export default function TripsList() {
+  const { colors } = useTheme();
   const trips = useTrips();
 
   return (
-    <View style={s.container}>
-      <View style={s.header}>
-        <Text style={s.title}>Viajes</Text>
-        <View style={s.headerRight}>
-          <SyncIndicator />
-          <Link href="/trips/new" asChild>
-            <Pressable style={s.addButton}>
-              <Text style={s.addText}>+ Nuevo</Text>
-            </Pressable>
-          </Link>
-        </View>
-      </View>
+    <Screen>
+      <ScreenHeader
+        title="Viajes"
+        subtitle={`${trips.length} viaje${trips.length === 1 ? "" : "s"} registrado${
+          trips.length === 1 ? "" : "s"
+        }`}
+        right={
+          <>
+            <SyncIndicator />
+            <Link href="/trips/new" asChild>
+              <Pressable
+                style={({ pressed }) => [
+                  {
+                    backgroundColor: colors.primary,
+                    paddingHorizontal: 14,
+                    paddingVertical: 8,
+                    borderRadius: 12,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 4,
+                    opacity: pressed ? 0.85 : 1,
+                  },
+                ]}
+              >
+                <Text
+                  style={{
+                    color: colors.textOnPrimary,
+                    fontWeight: "800",
+                    fontSize: 13,
+                  }}
+                >
+                  + Nuevo
+                </Text>
+              </Pressable>
+            </Link>
+          </>
+        }
+      />
 
       <FlatList
         data={trips}
         keyExtractor={(t) => t._local_id}
-        contentContainerStyle={{ padding: 16 }}
-        ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+        contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+        ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
         renderItem={({ item }) => (
           <Link href={`/trips/${item._local_id}`} asChild>
-            <Pressable style={s.card}>
-              <View style={s.rowBetween}>
-                <Text style={s.tripTitle}>Viaje #{item.trip_number}</Text>
-                <Text
-                  style={
-                    item.balance_status === "paid"
-                      ? s.statusPaid
-                      : s.statusPending
-                  }
+            <Pressable
+              style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+            >
+              <Card>
+                {/* Header: #viaje + status pill */}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 8,
+                  }}
                 >
-                  {item.balance_status === "paid"
-                    ? "🟢 Paz y salvo"
-                    : "🔴 Pendiente"}
+                  <View
+                    style={{
+                      backgroundColor: colors.primaryMuted,
+                      borderRadius: 6,
+                      paddingHorizontal: 8,
+                      paddingVertical: 2,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: colors.primary,
+                        fontSize: 11,
+                        fontWeight: "800",
+                        letterSpacing: 1,
+                      }}
+                    >
+                      #{item.trip_number}
+                    </Text>
+                  </View>
+                  <StatusPill
+                    variant={
+                      item.balance_status === "paid"
+                        ? "success"
+                        : item.status === "finished"
+                          ? "warning"
+                          : "info"
+                    }
+                  >
+                    {item.balance_status === "paid"
+                      ? "✓ Paz y salvo"
+                      : item.status === "finished"
+                        ? "Pendiente"
+                        : "En curso"}
+                  </StatusPill>
+                </View>
+
+                {/* Ruta */}
+                <RouteArrow
+                  origin={item.origin}
+                  destination={item.destination}
+                />
+
+                {/* Meta info */}
+                <Text
+                  style={{
+                    color: colors.textMuted,
+                    fontSize: 12,
+                    marginTop: 4,
+                  }}
+                >
+                  🚛 {item.moto_qty} motos · 📅 {item.date}
                 </Text>
-              </View>
-              <Text style={s.route}>
-                {item.origin} → {item.destination}
-              </Text>
-              <Text style={s.route}>
-                {item.moto_qty} motos · {item.date}
-              </Text>
-              <View style={[s.rowBetween, { marginTop: 12 }]}>
-                <Info
-                  label="Flete"
-                  value={`$${item.gross_freight.toLocaleString("es-CO")}`}
-                />
-                <Info
-                  label="Neto"
-                  value={`$${item.net_freight.toLocaleString("es-CO")}`}
-                />
-                <Info
-                  label="Cumplido"
-                  value={`$${item.balance.toLocaleString("es-CO")}`}
-                />
-              </View>
+
+                {/* Stats: 3 columnas */}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    gap: 12,
+                    marginTop: 12,
+                    paddingTop: 12,
+                    borderTopWidth: 1,
+                    borderTopColor: colors.border,
+                  }}
+                >
+                  <MiniStat
+                    label="Flete"
+                    value={`$${item.gross_freight.toLocaleString("es-CO")}`}
+                  />
+                  <MiniStat
+                    label="Neto"
+                    value={`$${item.net_freight.toLocaleString("es-CO")}`}
+                  />
+                  <MiniStat
+                    label="Cumplido"
+                    value={`$${item.balance.toLocaleString("es-CO")}`}
+                    highlight={item.balance_status === "pending"}
+                  />
+                </View>
+              </Card>
             </Pressable>
           </Link>
         )}
         ListEmptyComponent={
-          <Text
-            style={{ textAlign: "center", marginTop: 40, color: "#6b7280" }}
-          >
-            Sin viajes aún.
-          </Text>
+          <EmptyState
+            icon="🚚"
+            title="Sin viajes aún"
+            subtitle="Crea tu primer viaje para empezar a llevar el control financiero."
+            cta={
+              <Link href="/trips/new" asChild>
+                <PrimaryButton label="Crear viaje" icon="+" />
+              </Link>
+            }
+          />
         }
       />
-    </View>
+    </Screen>
   );
 }
 
-function Info({ label, value }: { label: string; value: string }) {
+function MiniStat({
+  label,
+  value,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
+  const { colors } = useTheme();
   return (
-    <View>
-      <Text style={s.infoLabel}>{label}</Text>
-      <Text style={s.infoValue}>{value}</Text>
+    <View style={{ flex: 1 }}>
+      <Text
+        style={{
+          fontSize: 10,
+          color: colors.textMuted,
+          fontWeight: "700",
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+        }}
+      >
+        {label}
+      </Text>
+      <Text
+        style={{
+          fontSize: 14,
+          fontWeight: "800",
+          color: highlight ? colors.danger : colors.text,
+          marginTop: 2,
+          fontVariant: ["tabular-nums"],
+        }}
+        numberOfLines={1}
+      >
+        {value}
+      </Text>
     </View>
   );
 }
-
-const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "white" },
-  header: {
-    padding: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
-  },
-  title: { fontSize: 24, fontWeight: "bold", color: "#111827" },
-  headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
-  addButton: {
-    backgroundColor: "#059669",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  addText: { color: "white", fontWeight: "bold" },
-  card: {
-    backgroundColor: "#f3f4f6",
-    borderRadius: 12,
-    padding: 16,
-  },
-  rowBetween: { flexDirection: "row", justifyContent: "space-between" },
-  tripTitle: { fontWeight: "bold", fontSize: 16, color: "#111827" },
-  statusPaid: { color: "#059669", fontWeight: "600" },
-  statusPending: { color: "#dc2626", fontWeight: "600" },
-  route: { color: "#4b5563", marginTop: 4 },
-  infoLabel: {
-    fontSize: 10,
-    color: "#6b7280",
-    textTransform: "uppercase",
-    fontWeight: "600",
-  },
-  infoValue: { fontSize: 13, fontWeight: "600", color: "#111827" },
-});

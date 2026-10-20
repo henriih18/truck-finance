@@ -16,10 +16,21 @@ import { useTripsRepo } from "../../src/hooks/useTripsRepo";
 import { useSettings } from "../../src/hooks/useSettings";
 import { useTrucks } from "../../src/hooks/useTrucks";
 import { useAuthStore } from "../../src/stores/auth.store";
+import { useTheme } from "../../src/theme/ThemeContext";
+import {
+  Screen,
+  ScreenHeader,
+  Card,
+  SectionTitle,
+  PrimaryButton,
+  spacing,
+  typography,
+} from "../../src/ui/components";
 import type { TruckRow } from "../../src/db/repositories/trucks.repo";
 
 export default function NewTrip() {
   const router = useRouter();
+  const { colors } = useTheme();
   const repo = useTripsRepo();
   const settings = useSettings();
   const { trucks } = useTrucks();
@@ -43,8 +54,6 @@ export default function NewTrip() {
   const gf = Number(grossFreight) || 0;
   const mq = Number(motoQty) || 0;
 
-  // Cuando se cargan los settings, pre-llenar los campos per-viaje con los
-  // defaults. El usuario puede editarlos antes de guardar el viaje.
   useEffect(() => {
     if (!settings) return;
     setTieDeducted(settings.tieMode === "deduct");
@@ -54,27 +63,27 @@ export default function NewTrip() {
     setUnloadPerMoto(String(settings.unloadPerMoto));
   }, [settings]);
 
-  // Cuando se selecciona un camión, sugerir su kilometraje actual como inicial
-  // (solo si el campo está vacío o si cambia el camión seleccionado)
   const truckMileage = selectedTruck?.mileage ?? null;
   const lastTruckIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (truckId !== lastTruckIdRef.current) {
       lastTruckIdRef.current = truckId;
-      if (truckMileage != null) {
-        setInitialMileage(String(truckMileage));
-      }
+      if (truckMileage != null) setInitialMileage(String(truckMileage));
     }
   }, [truckId, truckMileage]);
 
   if (!repo) {
     return (
-      <View style={s.center}>
-        <ActivityIndicator size="large" color="#059669" />
-        <Text style={{ marginTop: 10, color: "#6b7280" }}>
-          Preparando formulario...
-        </Text>
-      </View>
+      <Screen>
+        <View
+          style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+        >
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={{ marginTop: 10, color: colors.textMuted }}>
+            Preparando formulario...
+          </Text>
+        </View>
+      </Screen>
     );
   }
 
@@ -120,339 +129,443 @@ export default function NewTrip() {
   };
 
   return (
-    <ScrollView style={s.container}>
-      <Text style={s.title}>Nuevo viaje</Text>
-
-      {/* Selector de camión */}
-      <Text style={s.label}>CAMIÓN</Text>
-      <Pressable
-        style={[s.input, s.truckSelector]}
-        onPress={() => setTruckPickerVisible(true)}
+    <Screen>
+      <ScreenHeader
+        title="Nuevo viaje"
+        subtitle="Completa los datos del flete"
+      />
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
       >
-        {selectedTruck ? (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Text style={s.truckPlateChip}>{selectedTruck.plate}</Text>
-            <Text style={s.truckSelectorSub}>
-              {[selectedTruck.brand, selectedTruck.model, selectedTruck.year]
-                .filter(Boolean)
-                .join(" · ")}
-            </Text>
-          </View>
-        ) : (
-          <Text style={s.placeholder}>Seleccionar camión (opcional)</Text>
-        )}
-        <Text style={s.truckSelectorArrow}>▾</Text>
-      </Pressable>
-
-      <Text style={s.label}>CLIENTE / EMPRESA</Text>
-      <TextInput
-        style={s.input}
-        value={client}
-        onChangeText={setClient}
-        placeholder="Ej: Empresa XYZ"
-      />
-
-      <Text style={s.label}>ORIGEN</Text>
-      <TextInput
-        style={s.input}
-        value={origin}
-        onChangeText={setOrigin}
-        placeholder="Ej: Armenia"
-      />
-
-      <Text style={s.label}>DESTINO</Text>
-      <TextInput
-        style={s.input}
-        value={destination}
-        onChangeText={setDestination}
-        placeholder="Ej: Bogotá"
-      />
-
-      <Text style={s.label}>CANTIDAD DE MOTOS</Text>
-      <TextInput
-        style={s.input}
-        value={motoQty}
-        onChangeText={setMotoQty}
-        keyboardType="numeric"
-        placeholder="0"
-      />
-
-      <Text style={s.label}>FLETE TOTAL</Text>
-      <TextInput
-        style={s.input}
-        value={grossFreight}
-        onChangeText={setGrossFreight}
-        keyboardType="numeric"
-        placeholder="0"
-      />
-
-      <Text style={s.label}>¿EL AMARRE SE DESCUENTA DEL FLETE?</Text>
-      <View style={s.row}>
+        {/* === SECCIÓN: Datos del viaje === */}
+        <SectionTitle>Camión</SectionTitle>
         <Pressable
-          style={[s.choice, tieDeducted && s.choiceActive]}
-          onPress={() => setTieDeducted(true)}
+          style={({ pressed }) => [
+            {
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: 16,
+              paddingHorizontal: 16,
+              paddingVertical: 14,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+          onPress={() => setTruckPickerVisible(true)}
         >
-          <Text style={tieDeducted ? s.choiceTextActive : s.choiceText}>
-            Sí
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[s.choice, !tieDeducted && s.choiceActive]}
-          onPress={() => setTieDeducted(false)}
-        >
-          <Text style={!tieDeducted ? s.choiceTextActive : s.choiceText}>
-            No
-          </Text>
-        </Pressable>
-      </View>
-
-      {tieDeducted ? (
-        <>
-          <Text style={s.label}>VALOR DEL AMARRE ($)</Text>
-          <TextInput
-            style={s.input}
-            value={tieFixed}
-            onChangeText={setTieFixed}
-            keyboardType="numeric"
-            placeholder="0"
-          />
-        </>
-      ) : (
-        <>
-          <Text style={s.label}>VALOR DEL AMARRE POR MOTO ($)</Text>
-          <TextInput
-            style={s.input}
-            value={tiePerMoto}
-            onChangeText={setTiePerMoto}
-            keyboardType="numeric"
-            placeholder="0"
-          />
-        </>
-      )}
-
-      <Text style={s.label}>ANTICIPO (%)</Text>
-      <TextInput
-        style={s.input}
-        value={advancePct}
-        onChangeText={setAdvancePct}
-        keyboardType="numeric"
-        placeholder="70"
-      />
-
-      <Text style={s.label}>DESCARGUE POR MOTO ($)</Text>
-      <TextInput
-        style={s.input}
-        value={unloadPerMoto}
-        onChangeText={setUnloadPerMoto}
-        keyboardType="numeric"
-        placeholder="0"
-      />
-
-      <Text style={s.label}>KILOMETRAJE INICIAL (opcional)</Text>
-      <TextInput
-        style={s.input}
-        value={initialMileage}
-        onChangeText={setInitialMileage}
-        keyboardType="numeric"
-        placeholder="0"
-      />
-      {selectedTruck?.mileage != null && (
-        <Text style={s.hint}>
-          🚛 Kilometraje actual del camión:{" "}
-          {selectedTruck.mileage.toLocaleString("es-CO")} km
-        </Text>
-      )}
-
-      <Pressable style={s.button} onPress={submit}>
-        <Text style={s.buttonText}>GUARDAR VIAJE</Text>
-      </Pressable>
-
-      {/* Modal picker de camiones */}
-      <Modal visible={truckPickerVisible} animationType="slide" transparent>
-        <View style={s.modalOverlay}>
-          <View style={s.modalContent}>
-            <View style={s.modalHeader}>
-              <Text style={s.modalTitle}>Selecciona un camión</Text>
-              <Pressable
-                onPress={() => {
-                  setTruckId(null);
-                  setTruckPickerVisible(false);
+          {selectedTruck ? (
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+            >
+              <View
+                style={{
+                  backgroundColor: colors.primaryMuted,
+                  paddingHorizontal: 8,
+                  paddingVertical: 4,
+                  borderRadius: 6,
                 }}
               >
-                <Text style={s.clearText}>Quitar</Text>
-              </Pressable>
-            </View>
-
-            {trucks.length === 0 ? (
-              <View style={s.emptyPicker}>
-                <Text style={s.emptyPickerText}>
-                  No tienes camiones registrados.
-                </Text>
-                <Pressable
-                  style={s.goToTrucksBtn}
-                  onPress={() => {
-                    setTruckPickerVisible(false);
-                    router.push("/trucks");
+                <Text
+                  style={{
+                    color: colors.primary,
+                    fontWeight: "800",
+                    fontSize: 13,
+                    letterSpacing: 1,
                   }}
                 >
-                  <Text style={s.goToTrucksText}>Ir a Mis Camiones</Text>
+                  {selectedTruck.plate}
+                </Text>
+              </View>
+              <Text style={{ color: colors.textMuted, fontSize: 13 }}>
+                {[selectedTruck.brand, selectedTruck.model, selectedTruck.year]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </Text>
+            </View>
+          ) : (
+            <Text style={{ color: colors.textMuted, fontSize: 15 }}>
+              Seleccionar camión (opcional)
+            </Text>
+          )}
+          <Text style={{ color: colors.textMuted, fontSize: 18 }}>▾</Text>
+        </Pressable>
+
+        <SectionTitle>Cliente y ruta</SectionTitle>
+        <Card>
+          <Field
+            label="Cliente / empresa"
+            value={client}
+            onChangeText={setClient}
+            placeholder="Ej: Empresa XYZ"
+          />
+          <Field
+            label="Origen"
+            value={origin}
+            onChangeText={setOrigin}
+            placeholder="Ej: Armenia"
+          />
+          <Field
+            label="Destino"
+            value={destination}
+            onChangeText={setDestination}
+            placeholder="Ej: Bogotá"
+          />
+        </Card>
+
+        {/* === SECCIÓN: Carga === */}
+        <SectionTitle>Carga</SectionTitle>
+        <Card>
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Field
+                label="Cant. de motos"
+                value={motoQty}
+                onChangeText={setMotoQty}
+                keyboardType="numeric"
+                placeholder="0"
+              />
+            </View>
+            <View style={{ flex: 2 }}>
+              <Field
+                label="Flete total ($)"
+                value={grossFreight}
+                onChangeText={setGrossFreight}
+                keyboardType="numeric"
+                placeholder="0"
+              />
+            </View>
+          </View>
+        </Card>
+
+        {/* === SECCIÓN: Amarre, anticipo, descargue === */}
+        <SectionTitle>Configuración del viaje</SectionTitle>
+        <Card>
+          <Text style={s.fieldLabel}>¿Amarre se descuenta del flete?</Text>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+            <ChoiceButton
+              label="Sí, descontar"
+              active={tieDeducted}
+              onPress={() => setTieDeducted(true)}
+            />
+            <ChoiceButton
+              label="No, cobrar por moto"
+              active={!tieDeducted}
+              onPress={() => setTieDeducted(false)}
+            />
+          </View>
+
+          {tieDeducted ? (
+            <Field
+              label="Valor del amarre ($)"
+              value={tieFixed}
+              onChangeText={setTieFixed}
+              keyboardType="numeric"
+              placeholder="130000"
+            />
+          ) : (
+            <Field
+              label="Valor por moto ($)"
+              value={tiePerMoto}
+              onChangeText={setTiePerMoto}
+              keyboardType="numeric"
+              placeholder="4000"
+            />
+          )}
+
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Field
+                label="Anticipo (%)"
+                value={advancePct}
+                onChangeText={setAdvancePct}
+                keyboardType="numeric"
+                placeholder="70"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Field
+                label="Descargue/moto ($)"
+                value={unloadPerMoto}
+                onChangeText={setUnloadPerMoto}
+                keyboardType="numeric"
+                placeholder="3500"
+              />
+            </View>
+          </View>
+        </Card>
+
+        {/* === SECCIÓN: Kilometraje === */}
+        <SectionTitle>Kilometraje inicial (opcional)</SectionTitle>
+        <Card>
+          <Field
+            label="Kilometraje inicial"
+            value={initialMileage}
+            onChangeText={setInitialMileage}
+            keyboardType="numeric"
+            placeholder="0"
+          />
+          {selectedTruck?.mileage != null && (
+            <Text
+              style={{
+                color: colors.textMuted,
+                fontSize: 12,
+                marginTop: 8,
+              }}
+            >
+              🚛 Kilometraje actual del camión:{" "}
+              {selectedTruck.mileage.toLocaleString("es-CO")} km
+            </Text>
+          )}
+        </Card>
+
+        <PrimaryButton label="GUARDAR VIAJE" icon="🚚" onPress={submit} />
+
+        {/* Modal picker de camiones */}
+        <Modal visible={truckPickerVisible} animationType="slide" transparent>
+          <Pressable
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.5)",
+              justifyContent: "flex-end",
+            }}
+            onPress={() => setTruckPickerVisible(false)}
+          >
+            <View
+              style={{
+                backgroundColor: colors.background,
+                borderTopLeftRadius: 20,
+                borderTopRightRadius: 20,
+                padding: 20,
+                maxHeight: "70%",
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 16,
+                }}
+              >
+                <Text style={[typography.h2, { color: colors.text }]}>
+                  Selecciona un camión
+                </Text>
+                <Pressable
+                  onPress={() => {
+                    setTruckId(null);
+                    setTruckPickerVisible(false);
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: colors.danger,
+                      fontWeight: "700",
+                      fontSize: 13,
+                    }}
+                  >
+                    Quitar
+                  </Text>
                 </Pressable>
               </View>
-            ) : (
-              <FlatList
-                data={trucks}
-                keyExtractor={(t) => t._local_id}
-                renderItem={({ item }) => (
+
+              {trucks.length === 0 ? (
+                <View style={{ paddingVertical: 24, alignItems: "center" }}>
+                  <Text style={{ color: colors.textMuted, marginBottom: 12 }}>
+                    No tienes camiones registrados.
+                  </Text>
                   <Pressable
-                    style={[
-                      s.truckOption,
-                      item._local_id === truckId && s.truckOptionActive,
-                    ]}
-                    onPress={() => pickTruck(item)}
+                    style={{
+                      backgroundColor: colors.primary,
+                      paddingHorizontal: 16,
+                      paddingVertical: 10,
+                      borderRadius: 10,
+                    }}
+                    onPress={() => {
+                      setTruckPickerVisible(false);
+                      router.push("/trucks");
+                    }}
                   >
-                    <Text style={s.truckPlate}>{item.plate}</Text>
-                    <Text style={s.truckSub}>
-                      {[item.brand, item.model, item.year]
-                        .filter(Boolean)
-                        .join(" · ") || "Sin detalles"}
+                    <Text
+                      style={{
+                        color: colors.textOnPrimary,
+                        fontWeight: "700",
+                      }}
+                    >
+                      Ir a Mis Camiones
                     </Text>
                   </Pressable>
-                )}
-              />
-            )}
+                </View>
+              ) : (
+                <FlatList
+                  data={trucks}
+                  keyExtractor={(t) => t._local_id}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={({ pressed }) => [
+                        {
+                          padding: 14,
+                          borderRadius: 12,
+                          backgroundColor:
+                            item._local_id === truckId
+                              ? colors.primaryMuted
+                              : colors.surface,
+                          borderWidth: 1,
+                          borderColor:
+                            item._local_id === truckId
+                              ? colors.primary
+                              : colors.border,
+                          marginBottom: 8,
+                          opacity: pressed ? 0.85 : 1,
+                        },
+                      ]}
+                      onPress={() => pickTruck(item)}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 16,
+                          fontWeight: "800",
+                          color: colors.text,
+                          letterSpacing: 1,
+                        }}
+                      >
+                        {item.plate}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          color: colors.textMuted,
+                          marginTop: 2,
+                        }}
+                      >
+                        {[item.brand, item.model, item.year]
+                          .filter(Boolean)
+                          .join(" · ") || "Sin detalles"}
+                      </Text>
+                    </Pressable>
+                  )}
+                />
+              )}
 
-            <Pressable
-              style={s.closePickerBtn}
-              onPress={() => setTruckPickerVisible(false)}
-            >
-              <Text style={s.closePickerText}>Cerrar</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-    </ScrollView>
+              <Pressable
+                style={{
+                  marginTop: 12,
+                  paddingVertical: 12,
+                  alignItems: "center",
+                  backgroundColor: colors.surfaceMuted,
+                  borderRadius: 12,
+                }}
+                onPress={() => setTruckPickerVisible(false)}
+              >
+                <Text
+                  style={{
+                    color: colors.textSecondary,
+                    fontWeight: "700",
+                  }}
+                >
+                  Cerrar
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Modal>
+      </ScrollView>
+    </Screen>
+  );
+}
+
+/* ============================================================
+ *  Field: label + input
+ * ============================================================ */
+function Field({
+  label,
+  value,
+  onChangeText,
+  keyboardType = "default",
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  keyboardType?: "default" | "numeric";
+  placeholder?: string;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ marginTop: 8 }}>
+      <Text style={s.fieldLabel}>{label}</Text>
+      <TextInput
+        style={{
+          backgroundColor: colors.surfaceMuted,
+          borderRadius: 10,
+          paddingHorizontal: 14,
+          paddingVertical: 12,
+          marginTop: 4,
+          fontSize: 16,
+          color: colors.text,
+          borderWidth: 1,
+          borderColor: colors.border,
+        }}
+        value={value}
+        onChangeText={onChangeText}
+        keyboardType={keyboardType}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textMuted}
+      />
+    </View>
+  );
+}
+
+function ChoiceButton({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        {
+          flex: 1,
+          paddingVertical: 12,
+          borderRadius: 10,
+          alignItems: "center",
+          backgroundColor: active ? colors.primary : colors.surfaceMuted,
+          borderWidth: 1,
+          borderColor: active ? colors.primary : colors.border,
+          opacity: pressed ? 0.85 : 1,
+        },
+      ]}
+    >
+      <Text
+        style={{
+          color: active ? colors.textOnPrimary : colors.textSecondary,
+          fontSize: 13,
+          fontWeight: "700",
+          textAlign: "center",
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "white", padding: 16 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 16,
-    color: "#111827",
-  },
-  label: {
+  fieldLabel: {
     fontSize: 11,
     color: "#6b7280",
-    marginTop: 12,
-    fontWeight: "600",
-    letterSpacing: 0.5,
-  },
-  input: {
-    backgroundColor: "#f3f4f6",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginTop: 4,
-    fontSize: 16,
-    color: "#111827",
-  },
-  row: { flexDirection: "row", gap: 8, marginTop: 8 },
-  choice: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-    backgroundColor: "#e5e7eb",
-  },
-  choiceActive: { backgroundColor: "#059669" },
-  choiceText: { color: "#111827" },
-  choiceTextActive: { color: "white", fontWeight: "bold" },
-  hint: { fontSize: 11, color: "#6b7280", marginTop: 4, marginLeft: 2 },
-  button: {
-    backgroundColor: "#059669",
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 32,
-    marginBottom: 16,
-  },
-  buttonText: { color: "white", fontSize: 16, fontWeight: "bold" },
-  // Selector de camión
-  truckSelector: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  truckPlateChip: {
-    backgroundColor: "#d1fae5",
-    color: "#065f46",
+    marginTop: 8,
     fontWeight: "700",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    fontSize: 14,
-    letterSpacing: 1,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
-  truckSelectorSub: { fontSize: 12, color: "#6b7280" },
-  truckSelectorArrow: { color: "#9ca3af", fontSize: 16 },
-  placeholder: { color: "#9ca3af", fontSize: 16 },
-  // Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    backgroundColor: "white",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: "70%",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  modalTitle: { fontSize: 16, fontWeight: "bold", color: "#111827" },
-  clearText: { color: "#dc2626", fontWeight: "600" },
-  emptyPicker: { paddingVertical: 24, alignItems: "center" },
-  emptyPickerText: { color: "#6b7280", marginBottom: 12 },
-  goToTrucksBtn: {
-    backgroundColor: "#059669",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  goToTrucksText: { color: "white", fontWeight: "600" },
-  truckOption: {
-    padding: 14,
-    borderRadius: 10,
-    backgroundColor: "#f9fafb",
-    marginBottom: 8,
-  },
-  truckOptionActive: {
-    backgroundColor: "#d1fae5",
-    borderWidth: 1,
-    borderColor: "#059669",
-  },
-  truckPlate: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#111827",
-    letterSpacing: 1,
-  },
-  truckSub: { fontSize: 12, color: "#6b7280", marginTop: 2 },
-  closePickerBtn: {
-    marginTop: 12,
-    paddingVertical: 12,
-    alignItems: "center",
-    backgroundColor: "#f3f4f6",
-    borderRadius: 10,
-  },
-  closePickerText: { color: "#374151", fontWeight: "600" },
 });

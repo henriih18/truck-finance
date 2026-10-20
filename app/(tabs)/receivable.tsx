@@ -5,28 +5,37 @@ import {
   Pressable,
   StyleSheet,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { Link } from "expo-router";
 import { useTrips } from "../../src/hooks/useTrips";
 import { useTripsRepo } from "../../src/hooks/useTripsRepo";
+import { useTheme } from "../../src/theme/ThemeContext";
 import { SyncIndicator } from "../../src/ui/SyncIndicator";
+import {
+  Screen,
+  ScreenHeader,
+  Card,
+  RouteArrow,
+  StatusPill,
+  EmptyState,
+  spacing,
+} from "../../src/ui/components";
 
 export default function Receivable() {
+  const { colors } = useTheme();
   const allTrips = useTrips();
   const repo = useTripsRepo();
 
-  // Filtrar solo viajes finalizados y con el cumplido pendiente
   const receivableTrips = allTrips.filter(
     (t) => t.status === "finished" && t.balance_status === "pending",
   );
 
-  // Calcular el total a cobrar
   const totalReceivable = receivableTrips.reduce(
     (sum, t) => sum + t.balance,
     0,
   );
 
-  // Función para calcular días pendientes (usamos updated_at como referencia de finalización)
   const getDaysPending = (dateString: string) => {
     if (!dateString) return 0;
     const date = new Date(dateString);
@@ -43,7 +52,7 @@ export default function Receivable() {
     if (!repo) return;
 
     Alert.alert(
-      "Registrar Pago",
+      "Registrar pago",
       `¿Confirmas que recibiste $${amount.toLocaleString("es-CO")} del viaje #${tripNumber}?`,
       [
         { text: "Cancelar", style: "cancel" },
@@ -56,7 +65,6 @@ export default function Receivable() {
               amount,
               new Date().toISOString(),
             );
-            // El hook useTrips se actualizará solo en 2 segundos y quitará el viaje de esta lista
           },
         },
       ],
@@ -65,63 +73,205 @@ export default function Receivable() {
 
   if (!repo) {
     return (
-      <View style={s.center}>
-        <Text style={{ color: "#6b7280" }}>Cargando...</Text>
-      </View>
+      <Screen>
+        <ScreenHeader title="Por cobrar" />
+        <View
+          style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+        >
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </Screen>
     );
   }
 
   return (
-    <View style={s.container}>
-      <View style={s.header}>
-        <Text style={s.title}>Por Cobrar</Text>
-        <SyncIndicator />
-      </View>
+    <Screen>
+      <ScreenHeader
+        title="Por cobrar"
+        subtitle="Cumplidos pendientes de pago"
+        right={<SyncIndicator />}
+      />
 
-      <View style={s.totalCard}>
-        <Text style={s.totalLabel}>TOTAL PENDIENTE</Text>
-        <Text style={s.totalValue}>
-          ${totalReceivable.toLocaleString("es-CO")}
-        </Text>
-        <Text style={s.totalSub}>
-          {receivableTrips.length} viajes por cobrar
-        </Text>
+      {/* HERO: total pendiente */}
+      <View style={{ padding: 16, paddingBottom: 0 }}>
+        <View
+          style={{
+            backgroundColor: colors.danger,
+            borderRadius: 20,
+            padding: 24,
+          }}
+        >
+          <Text
+            style={{
+              color: "rgba(255,255,255,0.85)",
+              fontSize: 12,
+              fontWeight: "700",
+              letterSpacing: 1,
+              textTransform: "uppercase",
+            }}
+          >
+            💰 Total pendiente
+          </Text>
+          <Text
+            style={{
+              color: "white",
+              fontSize: 36,
+              fontWeight: "900",
+              marginTop: 6,
+              fontVariant: ["tabular-nums"],
+            }}
+            numberOfLines={1}
+          >
+            ${totalReceivable.toLocaleString("es-CO")}
+          </Text>
+          <Text
+            style={{
+              color: "rgba(255,255,255,0.9)",
+              fontSize: 13,
+              marginTop: 6,
+            }}
+          >
+            {receivableTrips.length} viaje(s) por cobrar
+          </Text>
+        </View>
       </View>
 
       <FlatList
         data={receivableTrips}
         keyExtractor={(t) => t._local_id}
-        contentContainerStyle={{ padding: 16 }}
+        contentContainerStyle={{ padding: 16, paddingTop: 16 }}
         ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
         renderItem={({ item }) => {
           const days = getDaysPending(item._updated_at);
+          const urgency =
+            days >= 30 ? "danger" : days >= 15 ? "warning" : "neutral";
           return (
-            <View style={s.card}>
-              <View style={s.cardHeader}>
-                <Text style={s.tripNumber}>Viaje #{item.trip_number}</Text>
-                <Text style={s.daysPending}>🔴 {days} días pendiente</Text>
+            <Card>
+              {/* Header: trip number + days pill */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 8,
+                }}
+              >
+                <View
+                  style={{
+                    backgroundColor: colors.primaryMuted,
+                    borderRadius: 6,
+                    paddingHorizontal: 8,
+                    paddingVertical: 2,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: colors.primary,
+                      fontSize: 11,
+                      fontWeight: "800",
+                      letterSpacing: 1,
+                    }}
+                  >
+                    #{item.trip_number}
+                  </Text>
+                </View>
+                <StatusPill variant={urgency as any}>
+                  {days >= 30 ? "⚠️ " : ""}
+                  {days} día{days === 1 ? "" : "s"} pendiente
+                </StatusPill>
               </View>
 
-              <Text style={s.route}>
-                {item.origin} → {item.destination}
+              {/* Ruta */}
+              <RouteArrow origin={item.origin} destination={item.destination} />
+
+              <Text
+                style={{
+                  color: colors.textMuted,
+                  fontSize: 13,
+                  marginTop: 4,
+                }}
+              >
+                👤 {item.client}
               </Text>
-              <Text style={s.client}>{item.client}</Text>
 
-              <View style={s.amountRow}>
-                <Text style={s.amountLabel}>Cumplido (30%):</Text>
-                <Text style={s.amountValue}>
-                  ${item.balance.toLocaleString("es-CO")}
-                </Text>
+              {/* Cumplido destacado */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginTop: 16,
+                  paddingTop: 12,
+                  borderTopWidth: 1,
+                  borderTopColor: colors.border,
+                }}
+              >
+                <View>
+                  <Text
+                    style={{
+                      color: colors.textMuted,
+                      fontSize: 11,
+                      fontWeight: "700",
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    Cumplido (30%)
+                  </Text>
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontSize: 22,
+                      fontWeight: "900",
+                      marginTop: 2,
+                      fontVariant: ["tabular-nums"],
+                    }}
+                  >
+                    ${item.balance.toLocaleString("es-CO")}
+                  </Text>
+                </View>
               </View>
 
-              <View style={s.actions}>
+              {/* Acciones */}
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
                 <Link href={`/trips/${item._local_id}`} asChild>
-                  <Pressable style={s.btnDetail}>
-                    <Text style={s.btnDetailText}>Ver Detalle</Text>
+                  <Pressable
+                    style={({ pressed }) => [
+                      {
+                        flex: 1,
+                        paddingVertical: 12,
+                        borderRadius: 12,
+                        alignItems: "center",
+                        backgroundColor: colors.surfaceMuted,
+                        opacity: pressed ? 0.85 : 1,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        color: colors.textSecondary,
+                        fontWeight: "700",
+                        fontSize: 13,
+                      }}
+                    >
+                      Ver detalle
+                    </Text>
                   </Pressable>
                 </Link>
                 <Pressable
-                  style={s.btnPay}
+                  style={({ pressed }) => [
+                    {
+                      flex: 1.5,
+                      paddingVertical: 12,
+                      borderRadius: 12,
+                      alignItems: "center",
+                      backgroundColor: colors.primary,
+                      flexDirection: "row",
+                      justifyContent: "center",
+                      gap: 6,
+                      opacity: pressed ? 0.85 : 1,
+                    },
+                  ]}
                   onPress={() =>
                     handleMarkPaid(
                       item._local_id,
@@ -130,97 +280,28 @@ export default function Receivable() {
                     )
                   }
                 >
-                  <Text style={s.btnPayText}>Marcar Pagado</Text>
+                  <Text
+                    style={{
+                      color: colors.textOnPrimary,
+                      fontWeight: "800",
+                      fontSize: 13,
+                    }}
+                  >
+                    ✓ Marcar pagado
+                  </Text>
                 </Pressable>
               </View>
-            </View>
+            </Card>
           );
         }}
         ListEmptyComponent={
-          <View style={s.emptyState}>
-            <Text style={{ fontSize: 40, marginBottom: 10 }}>🎉</Text>
-            <Text style={s.emptyText}>¡Todo al día!</Text>
-            <Text style={s.emptySub}>No hay viajes pendientes por cobrar.</Text>
-          </View>
+          <EmptyState
+            icon="🎉"
+            title="¡Todo al día!"
+            subtitle="No tienes viajes pendientes por cobrar."
+          />
         }
       />
-    </View>
+    </Screen>
   );
 }
-
-const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#ffffff" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  title: { fontSize: 24, fontWeight: "bold", color: "#111827" },
-  totalCard: {
-    backgroundColor: "#dc2626",
-    padding: 20,
-    margin: 16,
-    borderRadius: 16,
-  },
-  totalLabel: {
-    color: "rgba(255,255,255,0.8)",
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 1,
-  },
-  totalValue: {
-    color: "white",
-    fontSize: 32,
-    fontWeight: "bold",
-    marginTop: 4,
-  },
-  totalSub: { color: "rgba(255,255,255,0.9)", fontSize: 14, marginTop: 4 },
-  card: {
-    backgroundColor: "#f9fafb",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-  },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  tripNumber: { fontSize: 16, fontWeight: "bold", color: "#111827" },
-  daysPending: { fontSize: 12, color: "#dc2626", fontWeight: "600" },
-  route: { color: "#4b5563", fontSize: 14 },
-  client: { color: "#6b7280", fontSize: 13, marginTop: 2, marginBottom: 12 },
-  amountRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  amountLabel: { color: "#4b5563", fontWeight: "600" },
-  amountValue: { color: "#111827", fontWeight: "bold", fontSize: 16 },
-  actions: { flexDirection: "row", gap: 10 },
-  btnDetail: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: "center",
-    backgroundColor: "#e5e7eb",
-  },
-  btnDetailText: { color: "#374151", fontWeight: "600" },
-  btnPay: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: "center",
-    backgroundColor: "#059669",
-  },
-  btnPayText: { color: "white", fontWeight: "bold" },
-  emptyState: { alignItems: "center", marginTop: 60 },
-  emptyText: { fontSize: 20, fontWeight: "bold", color: "#111827" },
-  emptySub: { color: "#6b7280", marginTop: 4 },
-});

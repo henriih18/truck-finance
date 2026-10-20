@@ -1,12 +1,19 @@
-import { View, Text, FlatList, Pressable, StyleSheet } from "react-native";
+import { View, Text, FlatList, Pressable } from "react-native";
 import { Link } from "expo-router";
 import { useGeneralExpenses } from "../../src/hooks/useGeneralExpenses";
 import { useExpenseCategories } from "../../src/hooks/useExpenseCategories";
+import { useTheme } from "../../src/theme/ThemeContext";
 import { SyncIndicator } from "../../src/ui/SyncIndicator";
+import {
+  Screen,
+  ScreenHeader,
+  Card,
+  EmptyState,
+  PrimaryButton,
+} from "../../src/ui/components";
 
 // Mapa de iconos por código (fallback para gastos viejos sin category_id)
 const CATEGORY_ICONS: Record<string, string> = {
-  // Generales
   MANTENIMIENTO: "🔧",
   ACEITE: "🛢️",
   LLANTAS: "🛞",
@@ -15,7 +22,6 @@ const CATEGORY_ICONS: Record<string, string> = {
   SEGUROS: "🛡️",
   LAVADO: "🚿",
   OTRO: "📦",
-  // De viaje (pueden aparecer aquí si el usuario los usó como generales)
   COMBUSTIBLE: "⛽",
   PEAJE: "🛣️",
   DESCARGUE: "📦",
@@ -23,117 +29,161 @@ const CATEGORY_ICONS: Record<string, string> = {
 };
 
 export default function GeneralExpenses() {
+  const { colors } = useTheme();
   const expenses = useGeneralExpenses();
   const { categories } = useExpenseCategories();
 
-  // Mapa code → label para resolver el display rápidamente
+  // Mapa code → label
   const labelByCode = new Map<string, string>();
-  for (const c of categories) {
-    labelByCode.set(c.code, c.label);
-  }
+  for (const c of categories) labelByCode.set(c.code, c.label);
 
   const getCategoryIcon = (code: string) => CATEGORY_ICONS[code] || "📦";
   const getCategoryLabel = (code: string) => labelByCode.get(code) ?? code;
 
   return (
-    <View style={s.container}>
-      <View style={s.header}>
-        <Text style={s.title}>Gastos del Camión</Text>
-        <View style={s.headerRight}>
-          <SyncIndicator />
-          <Link href="/expenses/add" asChild>
-            <Pressable style={s.addButton}>
-              <Text style={s.addText}>+ Nuevo</Text>
-            </Pressable>
-          </Link>
-        </View>
-      </View>
+    <Screen>
+      <ScreenHeader
+        title="Gastos"
+        subtitle="Gastos generales del camión (no asociados a un viaje)"
+        right={
+          <>
+            <SyncIndicator />
+            <Link href="/expenses/add" asChild>
+              <Pressable
+                style={({ pressed }) => [
+                  {
+                    backgroundColor: colors.primary,
+                    paddingHorizontal: 14,
+                    paddingVertical: 8,
+                    borderRadius: 12,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 4,
+                    opacity: pressed ? 0.85 : 1,
+                  },
+                ]}
+              >
+                <Text
+                  style={{
+                    color: colors.textOnPrimary,
+                    fontWeight: "800",
+                    fontSize: 13,
+                  }}
+                >
+                  + Nuevo
+                </Text>
+              </Pressable>
+            </Link>
+          </>
+        }
+      />
 
       <FlatList
         data={expenses}
         keyExtractor={(item) => item._local_id}
-        contentContainerStyle={{ padding: 16 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
         ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
         renderItem={({ item }) => (
-          <View style={s.card}>
-            <View style={s.rowBetween}>
+          <Card>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              {/* Avatar icon */}
               <View
-                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 12,
+                  backgroundColor: colors.surfaceMuted,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
               >
-                <Text style={{ fontSize: 20 }}>
+                <Text style={{ fontSize: 22 }}>
                   {getCategoryIcon(item.category_code)}
                 </Text>
-                <View>
-                  <Text style={s.category}>
-                    {getCategoryLabel(item.category_code)}
-                  </Text>
-                  <Text style={s.description}>{item.description}</Text>
-                </View>
               </View>
-              <Text style={s.amount}>
-                -${Number(item.amount).toLocaleString("es-CO")}
-              </Text>
+
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    color: colors.textMuted,
+                    fontSize: 11,
+                    fontWeight: "700",
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  {getCategoryLabel(item.category_code)}
+                </Text>
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontSize: 15,
+                    fontWeight: "700",
+                    marginTop: 2,
+                  }}
+                  numberOfLines={2}
+                >
+                  {item.description || getCategoryLabel(item.category_code)}
+                </Text>
+                <Text
+                  style={{
+                    color: colors.textMuted,
+                    fontSize: 12,
+                    marginTop: 2,
+                  }}
+                >
+                  📅 {item.date}
+                  {item.mileage
+                    ? ` · 🛣️ ${item.mileage.toLocaleString()} km`
+                    : ""}
+                </Text>
+              </View>
+
+              <View style={{ alignItems: "flex-end" }}>
+                <Text
+                  style={{
+                    color: colors.danger,
+                    fontSize: 16,
+                    fontWeight: "800",
+                    fontVariant: ["tabular-nums"],
+                  }}
+                >
+                  −${Number(item.amount).toLocaleString("es-CO")}
+                </Text>
+                {item.receipt_url || item.receipt_local ? (
+                  <Text
+                    style={{
+                      color: colors.textMuted,
+                      fontSize: 10,
+                      marginTop: 2,
+                    }}
+                  >
+                    📷 recibo
+                  </Text>
+                ) : null}
+              </View>
             </View>
-            <Text style={s.date}>
-              {item.date} {item.mileage ? `· Km: ${item.mileage}` : ""}
-            </Text>
-          </View>
+          </Card>
         )}
         ListEmptyComponent={
-          <View style={s.emptyState}>
-            <Text style={{ fontSize: 40, marginBottom: 10 }}>🚚</Text>
-            <Text style={s.emptyText}>Sin gastos generales</Text>
-            <Text style={s.emptySub}>
-              Registra mantenimiento, aceite, llantas, etc.
-            </Text>
-          </View>
+          <EmptyState
+            icon="🧾"
+            title="Sin gastos generales"
+            subtitle="Registra mantenimiento, aceite, llantas, etc."
+            cta={
+              <Link href="/expenses/add" asChild>
+                <PrimaryButton label="Agregar gasto" icon="+" />
+              </Link>
+            }
+          />
         }
       />
-    </View>
+    </Screen>
   );
 }
-
-const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#ffffff" },
-  header: {
-    padding: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
-  },
-  title: { fontSize: 24, fontWeight: "bold", color: "#111827" },
-  headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
-  addButton: {
-    backgroundColor: "#059669",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  addText: { color: "white", fontWeight: "bold" },
-  card: {
-    backgroundColor: "#f9fafb",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-  },
-  rowBetween: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  category: { fontSize: 12, color: "#6b7280", fontWeight: "600" },
-  description: {
-    fontSize: 15,
-    color: "#111827",
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  amount: { fontSize: 16, color: "#dc2626", fontWeight: "bold" },
-  date: { fontSize: 12, color: "#6b7280", marginTop: 8 },
-  emptyState: { alignItems: "center", marginTop: 60 },
-  emptyText: { fontSize: 18, fontWeight: "bold", color: "#111827" },
-  emptySub: { color: "#6b7280", marginTop: 4, textAlign: "center" },
-});
